@@ -22,6 +22,8 @@ export interface ParsedEventDetails {
   date?: string;
   time?: string;
   location?: string;
+  /** Single suggested amount for all payment methods ("$25", "25 USD"). */
+  amount?: string;
   payments: ParsedPayment[];
   notes: string[];
 }
@@ -43,7 +45,10 @@ const LOCATION_PATTERNS = [
 ];
 
 // Payment methods: `Label: <id> [amount…]` — id is the first token, the
-// rest of the line is a free-form amount shown verbatim.
+// rest of the line is a free-form amount shown verbatim. A standalone
+// `Amount: X` line sets ONE suggested amount for every method (preferred —
+// per-method amounts only exist for back-compat with hand-posted lines).
+const AMOUNT_PATTERN = /\b(?:amount|price|cost|suggested)\s*[:-]\s*(.+)/i;
 const CASHAPP_PATTERN = /\b(?:cash\s?app|cashtag)\s*[:-]\s*(\$\S+)(?:\s+(.+))?/i;
 const VENMO_PATTERN = /\bvenmo\s*[:-]\s*(@?\S+)(?:\s+(.+))?/i;
 const LIGHTNING_PATTERN = /\b(?:lightning|lud16|ln|zap)\s*[:-]\s*(\S+)(?:\s+(.+))?/i;
@@ -64,7 +69,7 @@ function tryMatch(text: string, patterns: RegExp[]): string | undefined {
 }
 
 /** First plain number inside an amount string ("$25" / "25 USD" → "25"). */
-function numericAmount(amount: string | undefined): string | undefined {
+export function numericAmount(amount: string | undefined): string | undefined {
   if (!amount) return undefined;
   const m = amount.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
   return m?.[1];
@@ -140,6 +145,15 @@ export function parseEventDetails(messages: { content: string; createdAt: number
         }
       }
 
+      // Single suggested amount for all methods
+      if (!details.amount) {
+        const amount = tryMatch(text, [AMOUNT_PATTERN]);
+        if (amount) {
+          details.amount = amount;
+          continue;
+        }
+      }
+
       // Payment methods (first per method wins)
       if (!seenMethods.has("cashapp")) {
         const m = text.match(CASHAPP_PATTERN);
@@ -171,6 +185,17 @@ export function parseEventDetails(messages: { content: string; createdAt: number
 
       // Nothing matched → it's a note
       details.notes.push(text);
+    }
+  }
+
+  // One amount to rule them all: a standalone `Amount:` line applies to
+  // every method that doesn't carry its own (and prefills their pay links).
+  for (const p of details.payments) {
+    const effective = p.amount ?? details.amount;
+    if (effective && effective !== p.amount) {
+      p.amount = effective;
+      if (p.method === "cashapp") p.url = cashAppUrl(p.id, effective);
+      else if (p.method === "venmo") p.url = venmoUrl(p.id, effective);
     }
   }
 

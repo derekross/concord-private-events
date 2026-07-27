@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCommunityMembership } from "@/hooks/useCommunityMembership";
 import { useCommunityData } from "@/hooks/useCommunityData";
@@ -12,9 +13,11 @@ import {
   googleMapsUrl,
   appleMapsUrl,
   icsContent,
+  numericAmount,
   type ParsedEventDetails,
 } from "@/lib/eventParser";
 import { isAppleDevice } from "@/lib/device";
+import { resolveLightningInvoiceUri, useBtcUsdRate } from "@/lib/lightning";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,7 +156,7 @@ export default function AppPage() {
           </TabsContent>
 
           <TabsContent value="chat" forceMount className="data-[state=inactive]:hidden">
-            <ChatTab channel={chatChannel} />
+            <ChatTab channel={chatChannel} active={tab === "chat"} />
           </TabsContent>
         </Tabs>
       </main>
@@ -190,7 +193,7 @@ function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetad
 function MobileTabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 sm:hidden" aria-label="Sections">
-      <div className="rounded-t-3xl bg-gradient-to-r from-red-600 via-red-500 to-orange-500 shadow-[0_-6px_24px_rgba(190,18,60,0.35)] pt-2 pb-[env(safe-area-inset-bottom)]">
+      <div className="rounded-t-3xl bg-gradient-to-r from-red-600 via-red-500 to-orange-500 shadow-[0_-6px_24px_rgba(190,18,60,0.35)] pt-1.5 pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-cols-3">
           {TAB_ITEMS.map((item) => {
             const active = tab === item.value;
@@ -199,19 +202,18 @@ function MobileTabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => voi
                 key={item.value}
                 onClick={() => onChange(item.value)}
                 aria-current={active ? "page" : undefined}
-                className="flex flex-col items-center gap-0.5 py-1.5"
+                aria-label={item.label}
+                title={item.label}
+                className="flex items-center justify-center py-2"
               >
                 <span
-                  className={`flex size-12 items-center justify-center rounded-full text-2xl transition-all duration-200 ${
+                  className={`flex size-11 items-center justify-center rounded-full text-2xl transition-all duration-200 ${
                     active
-                      ? "bg-white shadow-lg motion-safe:scale-110 motion-safe:-translate-y-1"
+                      ? "bg-white shadow-lg motion-safe:scale-110 motion-safe:-translate-y-0.5"
                       : "bg-white/15"
                   }`}
                 >
                   {item.emoji}
-                </span>
-                <span className={`text-[11px] font-bold tracking-wide ${active ? "text-white" : "text-white/75"}`}>
-                  {item.label}
                 </span>
               </button>
             );
@@ -242,16 +244,21 @@ function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
         )}
         {description && (
           <div className="absolute inset-x-2 bottom-2 rounded-xl bg-black/50 backdrop-blur-sm px-3.5 py-2.5 shadow-lg">
-            <p className={`text-sm leading-snug text-white ${expanded ? "" : "line-clamp-2"}`}>
-              {description}
-            </p>
-            {isLong && (
+            {isLong ? (
               <button
                 onClick={() => setExpanded((v) => !v)}
-                className="text-xs font-semibold text-orange-200 mt-1 hover:text-white"
+                className="block w-full text-left"
+                aria-expanded={expanded}
               >
-                {expanded ? "Show less" : "Read more"}
+                <p className={`text-sm leading-snug text-white ${expanded ? "" : "line-clamp-2"}`}>
+                  {description}
+                </p>
+                <span className="text-[11px] font-semibold text-orange-200 mt-0.5 inline-block">
+                  {expanded ? "Show less ▴" : "More ▾"}
+                </span>
               </button>
+            ) : (
+              <p className="text-sm leading-snug text-white line-clamp-2">{description}</p>
             )}
           </div>
         )}
@@ -328,7 +335,7 @@ function MapMenu({ location }: { location: string }) {
   const appleUrl = appleMapsUrl(location);
 
   const chip =
-    "inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors px-4 py-2 text-sm font-medium text-white";
+    "inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium text-white";
 
   // Non-Apple devices: Google Maps is the only useful option — direct link.
   if (!isAppleDevice()) {
@@ -365,10 +372,226 @@ function MapMenu({ location }: { location: string }) {
   );
 }
 
+// ── Sats ⇄ USD Converter ─────────────────────────────────────────────────────
+
+function SatsConverter() {
+  const { data: rate } = useBtcUsdRate();
+
+  const [sats, setSats] = useState("");
+  const [usd, setUsd] = useState("");
+
+  const onSatsChange = (v: string) => {
+    setSats(v);
+    const n = Number(v);
+    if (!rate || !v.trim() || !isFinite(n)) {
+      setUsd("");
+      return;
+    }
+    setUsd(((n / 1e8) * rate).toFixed(2));
+  };
+
+  const onUsdChange = (v: string) => {
+    setUsd(v);
+    const n = Number(v);
+    if (!rate || !v.trim() || !isFinite(n)) {
+      setSats("");
+      return;
+    }
+    setSats(Math.round((n / rate) * 1e8).toString());
+  };
+
+  return (
+    <div className="rounded-2xl bg-white border border-orange-200 p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xl">⚡</span>
+        <p className="text-sm font-semibold text-gray-900">Sats ⇄ USD</p>
+        {rate && (
+          <span className="ml-auto text-[11px] text-gray-400">
+            1 BTC = ${rate.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <label className="text-[11px] font-semibold text-gray-500 mb-1 block">Sats</label>
+          <Input
+            value={sats}
+            onChange={(e) => onSatsChange(e.target.value)}
+            placeholder="21000"
+            inputMode="decimal"
+            className="text-base sm:text-sm h-11"
+          />
+        </div>
+        <span className="text-gray-400 pt-5">⇄</span>
+        <div className="flex-1">
+          <label className="text-[11px] font-semibold text-gray-500 mb-1 block">USD</label>
+          <Input
+            value={usd}
+            onChange={(e) => onUsdChange(e.target.value)}
+            placeholder="25.00"
+            inputMode="decimal"
+            className="text-base sm:text-sm h-11"
+          />
+        </div>
+      </div>
+      {!rate && (
+        <p className="text-[11px] text-gray-400 mt-2">Fetching current rate…</p>
+      )}
+    </div>
+  );
+}
+
+/** Chip In card — one suggested amount, however many ways to pay it. */
+function ChipInCard({ details }: { details: ParsedEventDetails }) {
+  const { data: rate } = useBtcUsdRate();
+  const [paying, setPaying] = useState(false);
+
+  // The host's single USD amount, converted to sats in the background.
+  const usdAmount = numericAmount(details.amount);
+  const sats = usdAmount && rate ? Math.round((Number(usdAmount) / rate) * 1e8) : undefined;
+
+  /** Tap → resolve LNURL-pay into a ready-made BOLT-11 invoice, then pay. */
+  const payLightning = async (id: string) => {
+    setPaying(true);
+    try {
+      let uri = `lightning:${id}`;
+      if (sats) {
+        try {
+          uri = await resolveLightningInvoiceUri(id, sats, AbortSignal.timeout(10_000));
+        } catch {
+          // Receiver unreachable / amount out of bounds — pay open-amount.
+        }
+      }
+      window.location.href = uri;
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-green-600 to-emerald-500 text-white p-5 shadow-md">
+      <div className="flex items-center gap-4">
+        <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0 text-3xl">
+          💸
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Chip In</p>
+          <p className="text-2xl font-bold leading-snug">Send the host money</p>
+          {details.amount && (
+            <p className="text-lg text-white/90">
+              {details.amount} suggested
+              {sats !== undefined && (
+                <span className="text-white/70 text-sm"> · ≈ {sats.toLocaleString()} sats</span>
+              )}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {details.payments.map((p) => {
+          const rowInner = (
+            <>
+              <span className="flex items-center gap-3 min-w-0">
+                <span className="text-2xl flex-shrink-0">
+                  {p.method === "cashapp" ? "💵" : p.method === "venmo" ? "📲" : "⚡"}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white">
+                    {p.method === "cashapp" ? "Cash App" : p.method === "venmo" ? "Venmo" : "Bitcoin Lightning"}
+                  </span>
+                  <span className="block text-xs text-white/70 truncate">{p.id}</span>
+                </span>
+              </span>
+              <span className="text-white/80 flex-shrink-0">
+                {p.method === "lightning" && paying ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  "→"
+                )}
+              </span>
+            </>
+          );
+          const rowClass =
+            "flex w-full items-center justify-between gap-3 rounded-xl bg-white/15 hover:bg-white/25 active:bg-white/30 px-4 py-3 transition-colors text-left";
+
+          // Lightning rows resolve an invoice in the background on tap.
+          if (p.method === "lightning") {
+            return (
+              <button key={p.method} onClick={() => payLightning(p.id)} disabled={paying} className={rowClass}>
+                {rowInner}
+              </button>
+            );
+          }
+          return (
+            <a key={p.method} href={p.url} target="_blank" rel="noopener noreferrer" className={rowClass}>
+              {rowInner}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Where card — sky gradient with a live static-map preview. */
+function WhereCard({ location }: { location: string }) {
+  const { data: mapUrl } = useMapPreview(location);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-500 text-white p-5 shadow-md">
+      <div className="flex items-center gap-4">
+        <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
+          <MapPin size={28} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Where</p>
+          <p className="text-2xl font-bold break-words leading-snug">{location}</p>
+        </div>
+      </div>
+      {mapUrl && !imgFailed && (
+        <img
+          src={mapUrl}
+          alt={`Map of ${location}`}
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+          className="mt-3 h-32 w-full rounded-xl object-cover border border-white/25"
+        />
+      )}
+      <div className="mt-4">
+        <MapMenu location={location} />
+      </div>
+    </div>
+  );
+}
+
 // ── Event Details Tab ────────────────────────────────────────────────────────
 
 /** Matches lines the parser consumes (mirrors eventParser patterns). */
-const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
+const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|amount|price|cost|suggested|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
+
+/** Geocode a location string and return a static map preview URL (OSM). */
+function useMapPreview(location: string | undefined) {
+  return useQuery<string | null>({
+    queryKey: ["map-preview", location],
+    enabled: Boolean(location),
+    // Addresses barely change; cache aggressively.
+    staleTime: 24 * 60 * 60_000,
+    retry: 1,
+    queryFn: async ({ signal }) => {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location!)}`,
+        { signal, headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) throw new Error(`geocode failed: HTTP ${res.status}`);
+      const [hit] = (await res.json()) as { lat: string; lon: string }[];
+      if (!hit) return null;
+      const lat = Number(hit.lat);
+      const lon = Number(hit.lon);
+      return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=600x256&markers=${lat},${lon},red-pushpin`;
+    },
+  });
+}
 
 function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
   const { messages, isLoading, sendMessage, editMessage } = useChannelChat(channel);
@@ -449,68 +672,14 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
         </div>
       )}
 
-      {/* Where — big white card */}
-      {details.location && (
-        <div className="rounded-2xl bg-white border border-orange-200 p-5 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-xl bg-orange-100 flex-shrink-0">
-              <MapPin size={28} className="text-red-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] uppercase tracking-widest text-gray-500 font-semibold">Where</p>
-              <p className="text-xl font-semibold text-gray-900 break-words leading-snug">
-                {details.location}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4">
-            <MapMenu location={details.location} />
-          </div>
-        </div>
-      )}
+      {/* Where — sky gradient card with map preview */}
+      {details.location && <WhereCard location={details.location} />}
 
-      {/* Chip In — payment methods for the host */}
-      {details.payments.length > 0 && (
-        <div className="rounded-2xl bg-white border border-orange-200 p-5 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-xl bg-green-100 flex-shrink-0 text-3xl">
-              💸
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] uppercase tracking-widest text-gray-500 font-semibold">Chip In</p>
-              <p className="text-xl font-semibold text-gray-900 leading-snug">Send the host money</p>
-            </div>
-          </div>
-          <div className="mt-4 space-y-2">
-            {details.payments.map((p) => (
-              <a
-                key={p.method}
-                href={p.url}
-                target={p.method === "lightning" ? undefined : "_blank"}
-                rel="noopener noreferrer"
-                className="flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3 hover:bg-orange-100 active:bg-orange-200 transition-colors"
-              >
-                <span className="flex items-center gap-3 min-w-0">
-                  <span className="text-2xl flex-shrink-0">
-                    {p.method === "cashapp" ? "💵" : p.method === "venmo" ? "📲" : "⚡"}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-gray-900">
-                      {p.method === "cashapp" ? "Cash App" : p.method === "venmo" ? "Venmo" : "Bitcoin Lightning"}
-                    </span>
-                    <span className="block text-xs text-gray-500 truncate">{p.id}</span>
-                  </span>
-                </span>
-                {p.amount && (
-                  <Badge className="bg-green-600 hover:bg-green-600 text-white flex-shrink-0">
-                    {p.amount}
-                  </Badge>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Chip In — payment methods for the host (green gradient) */}
+      {details.payments.length > 0 && <ChipInCard details={details} />}
+
+      {/* Sats ⇄ USD converter */}
+      <SatsConverter />
 
       {/* Additional notes/messages that didn't parse as structured data */}
       {details.notes.length > 0 && (
@@ -577,12 +746,11 @@ function EventDetailsComposer({
   const [date, setDate] = useState(details.date ?? "");
   const [time, setTime] = useState(details.time ?? "");
   const [location, setLocation] = useState(details.location ?? "");
+  // ONE suggested amount, however many payment methods are offered.
+  const [amount, setAmount] = useState(details.amount ?? "");
   const [cashapp, setCashapp] = useState(details.payments.find((p) => p.method === "cashapp")?.id ?? "");
-  const [cashappAmt, setCashappAmt] = useState(details.payments.find((p) => p.method === "cashapp")?.amount ?? "");
   const [venmo, setVenmo] = useState(details.payments.find((p) => p.method === "venmo")?.id ?? "");
-  const [venmoAmt, setVenmoAmt] = useState(details.payments.find((p) => p.method === "venmo")?.amount ?? "");
   const [lightning, setLightning] = useState(details.payments.find((p) => p.method === "lightning")?.id ?? "");
-  const [lightningAmt, setLightningAmt] = useState(details.payments.find((p) => p.method === "lightning")?.amount ?? "");
   // Extra info = the owner's own unstructured lines from their details post.
   const [extra, setExtra] = useState(() => {
     if (!ownerMessage) return "";
@@ -599,9 +767,10 @@ function EventDetailsComposer({
     if (date.trim()) lines.push(`Date: ${date.trim()}`);
     if (time.trim()) lines.push(`Time: ${time.trim()}`);
     if (location.trim()) lines.push(`Location: ${location.trim()}`);
-    if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}${cashappAmt.trim() ? ` ${cashappAmt.trim()}` : ""}`);
-    if (venmo.trim()) lines.push(`Venmo: ${venmo.trim()}${venmoAmt.trim() ? ` ${venmoAmt.trim()}` : ""}`);
-    if (lightning.trim()) lines.push(`Lightning: ${lightning.trim()}${lightningAmt.trim() ? ` ${lightningAmt.trim()}` : ""}`);
+    if (amount.trim()) lines.push(`Amount: ${amount.trim()}`);
+    if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}`);
+    if (venmo.trim()) lines.push(`Venmo: ${venmo.trim()}`);
+    if (lightning.trim()) lines.push(`Lightning: ${lightning.trim()}`);
     if (extra.trim()) lines.push(extra.trim());
     if (lines.length === 0) return;
 
@@ -641,18 +810,13 @@ function EventDetailsComposer({
         <div className="border-t border-orange-100 pt-3">
           <p className="text-xs font-semibold text-gray-600 mb-2">💸 Payment info (optional — how guests chip in)</p>
           <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input value={cashapp} onChange={(e) => setCashapp(e.target.value)} placeholder="Cash App $cashtag" className={field} />
-              <Input value={cashappAmt} onChange={(e) => setCashappAmt(e.target.value)} placeholder="$25" className={`${field} w-24 flex-shrink-0`} />
+            <div>
+              <label className="text-[11px] font-semibold text-gray-500 mb-1 block">Suggested amount (one for all methods)</label>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$25" className={field} />
             </div>
-            <div className="flex gap-2">
-              <Input value={venmo} onChange={(e) => setVenmo(e.target.value)} placeholder="Venmo @username" className={field} />
-              <Input value={venmoAmt} onChange={(e) => setVenmoAmt(e.target.value)} placeholder="$25" className={`${field} w-24 flex-shrink-0`} />
-            </div>
-            <div className="flex gap-2">
-              <Input value={lightning} onChange={(e) => setLightning(e.target.value)} placeholder="Lightning address (you@wallet.com)" className={field} />
-              <Input value={lightningAmt} onChange={(e) => setLightningAmt(e.target.value)} placeholder="21000 sats" className={`${field} w-28 flex-shrink-0`} />
-            </div>
+            <Input value={cashapp} onChange={(e) => setCashapp(e.target.value)} placeholder="Cash App $cashtag" className={field} />
+            <Input value={venmo} onChange={(e) => setVenmo(e.target.value)} placeholder="Venmo @username" className={field} />
+            <Input value={lightning} onChange={(e) => setLightning(e.target.value)} placeholder="Lightning address (you@wallet.com)" className={field} />
           </div>
         </div>
 
@@ -862,7 +1026,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 
 // ── Chat Tab ─────────────────────────────────────────────────────────────────
 
-function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
+function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: boolean }) {
   const { messages, isLoading, sendMessage, deleteMessage } = useChannelChat(channel);
   const { user } = useCurrentUser();
   const uploadFile = useUploadFile();
@@ -870,15 +1034,24 @@ function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
   const [pendingImages, setPendingImages] = useState<{ url: string; tags: string[][] }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wasActive = useRef(false);
 
-  // Auto-scroll on new messages only when already near the bottom — never
+  // Opening the tab snaps straight to the newest message (while inactive the
+  // panel is display:none, so it can't be pre-scrolled). Once open, new
+  // messages only pull the view down when already near the bottom — never
   // yank the viewport while someone is reading back through history.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    const justActivated = active && !wasActive.current;
+    if (justActivated) {
+      el.scrollTop = el.scrollHeight;
+    } else if (active) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
+    }
+    wasActive.current = active;
+  }, [active, messages.length]);
 
   const handleSend = async () => {
     if ((!input.trim() && pendingImages.length === 0) || !user) return;
@@ -927,9 +1100,32 @@ function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
   };
 
   return (
-    <Card className="border-orange-200 flex flex-col h-[65dvh]">
+    <Card
+      className={`border-orange-200 flex flex-col ${
+        active
+          ? // Mobile: pinned between the hero and the bottom nav — the card
+            // IS the page here, so there's exactly one scroll region (the
+            // message list). Offsets: header 56 + hero 144 + margins 20 top,
+            // nav 68 bottom.
+            "max-sm:fixed max-sm:inset-x-2 max-sm:z-10 max-sm:top-[calc(220px+env(safe-area-inset-top))] max-sm:bottom-[calc(68px+env(safe-area-inset-bottom))]"
+          : ""
+      } h-[65dvh] max-sm:h-auto`}
+    >
       <CardHeader className="flex-shrink-0 pb-2 pt-4">
-        <CardTitle className="text-red-800 text-base">💬 Group Chat</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-red-800 text-base">💬 Group Chat</CardTitle>
+          {/* Armada CTA — this community lives on the Concord protocol;
+              Armada is the full-featured client for it. */}
+          <a
+            href={`https://armada.buzz/c/${EVENT_CONFIG.communityId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-900 transition-colors hover:bg-orange-100 active:bg-orange-200"
+          >
+            <img src="/armada-favicon.png" alt="" className="size-3.5 rounded-sm" />
+            Open in Armada
+          </a>
+        </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 overflow-hidden px-3 pb-3">
         {/* Messages — native scroll for reliability */}
@@ -1027,18 +1223,6 @@ function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
             Send
           </Button>
         </div>
-
-        {/* Armada CTA — this community lives on the Concord protocol; Armada
-            is the full-featured client for it. */}
-        <a
-          href={`https://armada.buzz/c/${EVENT_CONFIG.communityId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs font-semibold text-orange-900 transition-colors hover:bg-orange-100 active:bg-orange-200"
-        >
-          <img src="/armada-mark.svg" alt="" className="size-4" />
-          Continue the conversation in Armada
-        </a>
       </CardContent>
     </Card>
   );

@@ -2,9 +2,9 @@
  * ChatMessageRow — single message with author avatar, name, and content.
  * Lightweight version of Armada's MessageRow.
  */
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Trash2 } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { useAuthor, getDisplayName } from "@/hooks/useAuthor";
 import type { ChatMessage } from "@/hooks/useChannelChat";
 
@@ -28,20 +28,49 @@ function pubkeyColor(pubkey: string): string {
 }
 
 function MessageImages({ images }: { images: string[] }) {
+  // In-app full-screen viewer — never punt the user out to a browser tab.
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+
   if (images.length === 0) return null;
   return (
-    <div className={`mb-1 ${images.length > 1 ? "grid grid-cols-2 gap-1" : ""}`}>
-      {images.map((url, i) => (
-        <img
-          key={i}
-          src={url}
-          alt="attachment"
-          className="rounded-lg max-w-full max-h-48 object-cover cursor-pointer"
-          loading="lazy"
-          onClick={() => window.open(url, "_blank")}
-        />
-      ))}
-    </div>
+    <>
+      <div className={`mb-1 ${images.length > 1 ? "grid grid-cols-2 gap-1" : ""}`}>
+        {images.map((url, i) => (
+          <img
+            key={i}
+            src={url}
+            alt="attachment"
+            className="rounded-lg max-w-full max-h-48 object-cover cursor-pointer"
+            loading="lazy"
+            onClick={() => setViewerUrl(url)}
+          />
+        ))}
+      </div>
+
+      {viewerUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3"
+          onClick={() => setViewerUrl(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image viewer"
+        >
+          <img
+            src={viewerUrl}
+            alt="attachment full view"
+            className="max-h-full max-w-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setViewerUrl(null)}
+            className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top))] flex size-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm active:bg-white/30"
+            title="Close"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
