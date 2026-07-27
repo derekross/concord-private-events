@@ -9,7 +9,6 @@ import { EVENT_CONFIG, CATEGORY_LABELS, SIGN_UP_CATEGORIES, type SignUpCategory 
 import { parseEventDetails, googleCalendarUrl, googleMapsUrl, icsDataUrl } from "@/lib/eventParser";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -20,14 +19,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSignUpBoard } from "@/hooks/useSignUpBoard";
 import { useChannelChat } from "@/hooks/useChannelChat";
+import { useLiveChannelEvents } from "@/hooks/useLiveChannelEvents";
+import { useDecryptedImage } from "@/hooks/useDecryptedImage";
 import { useUploadFile } from "@/hooks/useUploadFile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRef, useEffect } from "react";
-import { Loader2, ImageIcon, X, Trash2 } from "lucide-react";
+import { Loader2, ImageIcon, X, Trash2, CalendarPlus, MapPin, Clock, CalendarDays } from "lucide-react";
 import { ChatMessageRow } from "@/components/chat/ChatMessageRow";
+import { useSeoMeta } from "@unhead/react";
+import type { CommunityMetadata } from "@/concord-v2/lib/types";
+import type { ChannelV2 } from "@/concord-v2/lib/types";
 
 type Tab = "details" | "signup" | "chat";
 
@@ -42,23 +46,37 @@ export default function AppPage() {
   const { folded, isLoading: controlLoading } = useControlPlane(community);
 
   // Derive channel objects with their stream keys
-  const { eventInfoChannel, signUpChannel, chatChannel } = useChannels(community, folded);
+  const { channels, eventInfoChannel, signUpChannel, chatChannel } = useChannels(community, folded);
 
   // Check membership (depends on community data loading)
   const { data: isMember, isLoading: membershipLoading } = useCommunityMembership(user?.pubkey);
 
   const [tab, setTab] = useState<Tab>("details");
 
-  // Not logged in → redirect to landing
-  if (!user) {
-    navigate("/");
-    return null;
-  }
+  // The app is named after its community, not hardcoded branding.
+  const communityName = folded?.metadata?.name ?? EVENT_CONFIG.name;
+  useSeoMeta({ title: communityName });
+
+  // Live subscription: new chat messages land in the query cache the moment
+  // they hit a relay; edits/deletes/sign-up changes trigger instant refolds.
+  // Polling remains only as a reconciliation net.
+  useLiveChannelEvents(channels);
+
+  // Redirects live in effects — never navigate during render.
+  useEffect(() => {
+    if (!user) navigate("/");
+  }, [user, navigate]);
+
+  useEffect(() => {
+    if (!membershipLoading && !isMember && EVENT_CONFIG.communityId) navigate("/");
+  }, [membershipLoading, isMember, navigate]);
+
+  if (!user) return null;
 
   // Still loading community data → show loading
   if (membershipLoading || communityLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+      <div className="min-h-dvh flex items-center justify-center bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
         <div className="text-center space-y-3">
           <div className="text-4xl animate-bounce">🦐</div>
           <p className="text-sm text-gray-600">Loading community...</p>
@@ -70,18 +88,11 @@ export default function AppPage() {
   // Control plane still loading → show app shell with subtle indicator
   if (controlLoading && !folded) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-4 py-3">
-          <div className="max-w-2xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{EVENT_CONFIG.emoji}</span>
-              <h1 className="text-lg font-bold text-red-800">{EVENT_CONFIG.name}</h1>
-            </div>
-            <LoginArea />
-          </div>
-        </header>
-        <div className="max-w-2xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+      <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+        <AppHeader name={communityName} />
+        <div className="px-4 py-6 space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 pt-4">
             <Loader2 size={16} className="animate-spin" />
             Loading channels...
           </div>
@@ -90,43 +101,45 @@ export default function AppPage() {
     );
   }
 
-  // Not a member → redirect to landing (show invite input)
-  if (!isMember && EVENT_CONFIG.communityId) {
-    navigate("/");
-    return null;
-  }
+  // Not a member → landing (effect above performs the navigation)
+  if (!isMember && EVENT_CONFIG.communityId) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{EVENT_CONFIG.emoji}</span>
-            <h1 className="text-lg font-bold text-red-800">{EVENT_CONFIG.name}</h1>
-          </div>
-          <LoginArea />
-        </div>
-      </header>
+    <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+      <AppHeader name={communityName} metadata={folded?.metadata} />
 
-      {/* Main Content */}
-      <main className="max-w-2xl mx-auto px-4 py-6">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="details">📋 Details</TabsTrigger>
-            <TabsTrigger value="signup">📝 Sign-Up</TabsTrigger>
-            <TabsTrigger value="chat">💬 Chat</TabsTrigger>
+      {/* Main Content — full bleed; bottom padding clears the mobile tab bar */}
+      <main className="px-4 pt-4 pb-28 sm:pb-6">
+        <CommunityHero metadata={folded?.metadata} />
+
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-4">
+          {/* Mobile: fixed bottom app-style nav bar. Desktop: static top tabs. */}
+          <TabsList className="grid w-full grid-cols-3 mb-4 h-12 max-sm:fixed max-sm:bottom-0 max-sm:inset-x-0 max-sm:z-20 max-sm:mb-0 max-sm:h-auto max-sm:rounded-none max-sm:border-t max-sm:border-orange-200 max-sm:bg-white/95 max-sm:backdrop-blur-sm max-sm:pb-[env(safe-area-inset-bottom)]">
+            <TabsTrigger value="details" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
+              <span className="max-sm:text-2xl max-sm:leading-none">📋</span>
+              <span className="max-sm:text-xs max-sm:font-medium">Details</span>
+            </TabsTrigger>
+            <TabsTrigger value="signup" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
+              <span className="max-sm:text-2xl max-sm:leading-none">📝</span>
+              <span className="max-sm:text-xs max-sm:font-medium">Sign-Up</span>
+            </TabsTrigger>
+            <TabsTrigger value="chat" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
+              <span className="max-sm:text-2xl max-sm:leading-none">💬</span>
+              <span className="max-sm:text-xs max-sm:font-medium">Chat</span>
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="details">
+          {/* forceMount keeps every tab's query alive from first render:
+              data loads in the background and tab switches are instant. */}
+          <TabsContent value="details" forceMount className="data-[state=inactive]:hidden">
             <EventDetailsTab channel={eventInfoChannel} />
           </TabsContent>
 
-          <TabsContent value="signup">
+          <TabsContent value="signup" forceMount className="data-[state=inactive]:hidden">
             <SignUpTab channel={signUpChannel} />
           </TabsContent>
 
-          <TabsContent value="chat">
+          <TabsContent value="chat" forceMount className="data-[state=inactive]:hidden">
             <ChatTab channel={chatChannel} />
           </TabsContent>
         </Tabs>
@@ -135,10 +148,74 @@ export default function AppPage() {
   );
 }
 
+// ── App Header ───────────────────────────────────────────────────────────────
+
+function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetadata }) {
+  const icon = useDecryptedImage(metadata?.icon);
+
+  return (
+    <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-4 pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center justify-between py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon ? (
+            <img src={icon} alt="" className="size-7 rounded-lg object-cover flex-shrink-0" />
+          ) : (
+            <span className="text-2xl flex-shrink-0">{EVENT_CONFIG.emoji}</span>
+          )}
+          <h1 className="text-lg font-bold text-red-800 truncate">{name}</h1>
+        </div>
+        <LoginArea />
+      </div>
+    </header>
+  );
+}
+
+// ── Community Hero (banner / icon / description) ─────────────────────────────
+
+function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
+  const banner = useDecryptedImage(metadata?.banner);
+  const [expanded, setExpanded] = useState(false);
+
+  const name = metadata?.name ?? EVENT_CONFIG.name;
+  const description = metadata?.description ?? EVENT_CONFIG.subtitle;
+  // Offer expand/collapse only for genuinely long descriptions.
+  const isLong = (description?.length ?? 0) > 140;
+
+  return (
+    <div className="-mx-4 bg-gray-900">
+      <div className="relative h-36 sm:h-44">
+        {banner ? (
+          <img src={banner} alt="" className="absolute inset-0 size-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-red-600 via-orange-500 to-amber-400" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
+        {/* Community icon lives in the top-left app header, not here. */}
+        <div className="absolute bottom-3 left-4 right-4">
+          <h2 className="text-2xl font-bold text-white drop-shadow-sm">{name}</h2>
+          {description && (
+            <p className={`text-sm text-white/85 ${expanded ? "" : "line-clamp-2"}`}>
+              {description}
+            </p>
+          )}
+          {isLong && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="text-xs font-semibold text-white/90 underline underline-offset-2 mt-0.5 hover:text-white"
+            >
+              {expanded ? "Show less" : "Read more"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Event Details Tab ────────────────────────────────────────────────────────
 
-function EventDetailsTab({ channel }: { channel: import("@/concord-v2/lib/types").ChannelV2 | undefined }) {
-  const { messages } = useChannelChat(channel);
+function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
+  const { messages, isLoading } = useChannelChat(channel);
 
   const details = parseEventDetails(messages);
   const calUrl = googleCalendarUrl(details, EVENT_CONFIG.name);
@@ -146,138 +223,142 @@ function EventDetailsTab({ channel }: { channel: import("@/concord-v2/lib/types"
   const mapsUrl = details.location ? googleMapsUrl(details.location) : null;
   const hasAnyDetails = details.date || details.time || details.location;
 
+  // True first load (no cached data yet) → skeletons, not a fake empty state.
+  if (isLoading && messages.length === 0) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      </div>
+    );
+  }
+
   return (
-    <Card className="border-orange-200">
-      <CardHeader>
-        <CardTitle className="text-red-800 flex items-center gap-2">
-          📋 Event Details
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!hasAnyDetails && (
-          <div className="text-center py-6">
-            <div className="text-4xl mb-2">📋</div>
-            <p className="text-sm text-gray-500 mb-1">No event details posted yet.</p>
-            <p className="text-xs text-gray-400">
-              Post info to the {channel?.name ?? "event-info"} channel in Armada.
-              Use formats like <code className="bg-orange-50 px-1 rounded">Date: Aug 3</code>,{" "}
-              <code className="bg-orange-50 px-1 rounded">Time: 3 PM</code>,{" "}
-              <code className="bg-orange-50 px-1 rounded">Location: 123 Main St</code>
+    <div className="space-y-4">
+      {!hasAnyDetails && (
+        <Card className="border-dashed border-orange-300">
+          <CardContent className="py-10 px-6 text-center">
+            <div className="text-5xl mb-3">🦐</div>
+            <p className="text-base font-medium text-gray-700 mb-2">No event details posted yet</p>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+              Post info to the {channel?.name ?? "event-info"} channel in Armada using formats like{" "}
+              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Date: Aug 3</code>,{" "}
+              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Time: 3 PM</code>,{" "}
+              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Location: 123 Main St</code>
             </p>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        {hasAnyDetails && (
-          <div className="space-y-3">
-            {/* Date */}
-            {details.date && (
-              <div className="flex items-center justify-between p-3 bg-white/70 rounded-lg border border-orange-100">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">📅</span>
-                  <div>
-                    <p className="text-xs text-gray-500">Date</p>
-                    <p className="text-sm font-medium text-gray-900">{details.date}</p>
-                  </div>
-                </div>
-                {calUrl && (
-                  <a href={calUrl} target="_blank" rel="noopener noreferrer"
-                     className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
-                    📅 Add to Calendar
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* Time */}
-            {details.time && (
-              <div className="flex items-center justify-between p-3 bg-white/70 rounded-lg border border-orange-100">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🕐</span>
-                  <div>
-                    <p className="text-xs text-gray-500">Time</p>
-                    <p className="text-sm font-medium text-gray-900">{details.time}</p>
-                  </div>
-                </div>
-                {icsUrl && (
-                  <a href={icsUrl} download="seafood-boil.ics"
-                     className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
-                    📥 Download .ics
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* Location */}
-            {details.location && (
-              <div className="flex items-center justify-between p-3 bg-white/70 rounded-lg border border-orange-100">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xl flex-shrink-0">📍</span>
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-500">Location</p>
-                    <p className="text-sm font-medium text-gray-900 truncate">{details.location}</p>
-                  </div>
-                </div>
-                {mapsUrl && (
-                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                     className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1 flex-shrink-0">
-                    🗺️ Open Maps
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Additional notes/messages that didn't parse as structured data */}
-        {details.notes.length > 0 && (
-          <div className="pt-4 border-t border-orange-100">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">📢 Additional Info</h3>
-            <div className="space-y-2">
-              {details.notes.slice(-5).map((note, i) => (
-                <div key={i} className="p-2 bg-white/70 rounded-lg border border-orange-100">
-                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{note}</p>
-                </div>
-              ))}
+      {/* When — big gradient card */}
+      {(details.date || details.time) && (
+        <div className="rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white p-5 shadow-md">
+          <div className="flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
+              <CalendarDays size={30} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">When</p>
+              {details.date && (
+                <p className="text-2xl font-bold leading-tight">{details.date}</p>
+              )}
+              {details.time && (
+                <p className="text-lg text-white/90 flex items-center gap-1.5">
+                  <Clock size={16} className="opacity-80" />
+                  {details.time}
+                </p>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Raw messages for debugging (collapse once parser is solid) */}
-        {messages.length > 0 && (
-          <details className="pt-4 border-t border-orange-100">
-            <summary className="cursor-pointer text-xs text-gray-500">
-              View all {messages.length} messages from {channel?.name ?? "channel"}
-            </summary>
-            <div className="space-y-2 mt-2">
-              {messages.slice().reverse().map((msg) => (
-                <div key={msg.id} className="p-2 bg-white/50 rounded-lg">
-                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(msg.createdAt * 1000).toLocaleString()}
-                  </p>
-                </div>
-              ))}
+          {(calUrl || icsUrl) && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {calUrl && (
+                <a
+                  href={calUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium"
+                >
+                  <CalendarPlus size={15} />
+                  Google Calendar
+                </a>
+              )}
+              {icsUrl && (
+                <a
+                  href={icsUrl}
+                  download="seafood-boil.ics"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium"
+                >
+                  📥 Apple Calendar (.ics)
+                </a>
+              )}
             </div>
-          </details>
-        )}
-
-        <div className="pt-4 border-t border-orange-100">
-          <p className="text-xs text-gray-500">
-            💡 Post details to the {channel?.name ?? "event-info"} channel using formats like{" "}
-            <code className="bg-orange-50 px-1 rounded">Date: Aug 3</code>,{" "}
-            <code className="bg-orange-50 px-1 rounded">Time: 3 PM</code>,{" "}
-            <code className="bg-orange-50 px-1 rounded">Location: 123 Main St</code>
-          </p>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {/* Where — big white card */}
+      {details.location && (
+        <div className="rounded-2xl bg-white border border-orange-200 p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-orange-100 flex-shrink-0">
+              <MapPin size={28} className="text-red-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] uppercase tracking-widest text-gray-500 font-semibold">Where</p>
+              <p className="text-xl font-semibold text-gray-900 break-words leading-snug">
+                {details.location}
+              </p>
+            </div>
+          </div>
+          {mapsUrl && (
+            <div className="mt-4">
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors px-4 py-2 text-sm font-medium text-white"
+              >
+                <MapPin size={15} />
+                Open in Maps
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Additional notes/messages that didn't parse as structured data */}
+      {details.notes.length > 0 && (
+        <Card className="border-orange-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-red-800 text-base">📢 Additional Info</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {details.notes.slice(-5).map((note, i) => (
+              <div key={i} className="border-l-4 border-orange-300 bg-orange-50/60 rounded-r-lg px-3 py-2">
+                <p className="text-sm text-gray-900 whitespace-pre-wrap">{note}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {hasAnyDetails && (
+        <p className="text-xs text-gray-500 px-1">
+          💡 Post details to the {channel?.name ?? "event-info"} channel using formats like{" "}
+          <code className="bg-orange-50 px-1 rounded">Date: Aug 3</code>,{" "}
+          <code className="bg-orange-50 px-1 rounded">Time: 3 PM</code>,{" "}
+          <code className="bg-orange-50 px-1 rounded">Location: 123 Main St</code>
+        </p>
+      )}
+    </div>
   );
 }
 
 // ── Sign-Up Board Tab ────────────────────────────────────────────────────────
 
-function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").ChannelV2 | undefined }) {
-  const { items, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel);
+function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
+  const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel);
   const { user } = useCurrentUser();
   const [newItemName, setNewItemName] = useState("");
   const [newItemCategory, setNewItemCategory] = useState<SignUpCategory>("seafood");
@@ -285,29 +366,16 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
   const handleAdd = async () => {
     if (!newItemName.trim() || !user) return;
     try {
-      await addItem(newItemCategory, newItemName, user.signer);
+      await addItem(newItemCategory, newItemName, user.signer, user.pubkey);
       setNewItemName("");
     } catch (e) {
       console.error("Failed to add item:", e);
     }
   };
 
-  const handleClaim = async (itemId: string, creator: string) => {
-    if (!user) return;
-    try {
-      await claimItem(itemId, creator, user.signer);
-    } catch (e) {
-      console.error("Failed to claim item:", e);
-    }
-  };
-
-  const handleUnclaim = async (itemId: string) => {
-    if (!user) return;
-    try {
-      await unclaimItem(itemId, user.signer);
-    } catch (e) {
-      console.error("Failed to unclaim item:", e);
-    }
+  const handleDelete = (itemId: string) => {
+    if (!user || !confirm("Delete this item?")) return;
+    deleteItem(itemId, user.signer, user.pubkey).catch((e) => console.error("Delete failed:", e));
   };
 
   // Group items by category
@@ -320,7 +388,7 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
     <div className="space-y-6">
       {/* Add new item */}
       <Card className="border-orange-200">
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="text-red-800 text-base">➕ Add Item</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -329,11 +397,11 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
               placeholder="e.g., 2 lbs shrimp"
-              className="flex-1"
+              className="flex-1 text-base sm:text-sm h-11"
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
             <Select value={newItemCategory} onValueChange={(v) => setNewItemCategory(v as SignUpCategory)}>
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-36 h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -344,12 +412,22 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleAdd} className="bg-red-600 hover:bg-red-700">
+            <Button onClick={handleAdd} className="bg-red-600 hover:bg-red-700 h-11 px-5">
               Add
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* First-load skeleton */}
+      {isLoading && items.length === 0 && (
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+        </div>
+      )}
 
       {/* Items by category */}
       {itemsByCategory.map(({ category, items: catItems }) => (
@@ -369,10 +447,10 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
               {catItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 bg-white/70 rounded-lg border border-orange-100"
+                  className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-lg border border-orange-100"
                 >
-                  <div className="flex-1">
-                    <p className={`text-sm font-medium ${item.claimedBy ? "line-through text-gray-400" : "text-gray-900"}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium break-words ${item.claimedBy ? "line-through text-gray-400" : "text-gray-900"}`}>
                       {item.name}
                     </p>
                     {item.notes && (
@@ -383,11 +461,12 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                     )}
                   </div>
                   {item.claimedBy === user?.pubkey ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleUnclaim(item.id)}
+                        className="min-h-9"
+                        onClick={() => user && unclaimItem(item.id, user.signer, user.pubkey).catch((e) => console.error("Unclaim failed:", e))}
                       >
                         Unclaim
                       </Button>
@@ -395,12 +474,8 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-gray-400 hover:text-red-600 px-2"
-                          onClick={() => {
-                            if (confirm("Delete this item?")) {
-                              deleteItem(item.id, user.signer).catch((e) => console.error("Delete failed:", e));
-                            }
-                          }}
+                          className="text-gray-400 hover:text-red-600 px-2 min-h-9"
+                          onClick={() => handleDelete(item.id)}
                           title="Delete item"
                         >
                           <Trash2 size={14} />
@@ -408,11 +483,11 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                       )}
                     </div>
                   ) : !item.claimedBy ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <Button
                         size="sm"
-                        onClick={() => handleClaim(item.id, item.createdBy)}
-                        className="bg-green-600 hover:bg-green-700"
+                        className="bg-green-600 hover:bg-green-700 min-h-9"
+                        onClick={() => user && claimItem(item.id, user.signer, user.pubkey).catch((e) => console.error("Claim failed:", e))}
                       >
                         Claim
                       </Button>
@@ -420,12 +495,8 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-gray-400 hover:text-red-600 px-2"
-                          onClick={() => {
-                            if (confirm("Delete this item?")) {
-                              deleteItem(item.id, user.signer).catch((e) => console.error("Delete failed:", e));
-                            }
-                          }}
+                          className="text-gray-400 hover:text-red-600 px-2 min-h-9"
+                          onClick={() => handleDelete(item.id)}
                           title="Delete item"
                         >
                           <Trash2 size={14} />
@@ -436,12 +507,8 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-gray-400 hover:text-red-600 px-2"
-                      onClick={() => {
-                        if (confirm("Delete this item?")) {
-                          deleteItem(item.id, user.signer).catch((e) => console.error("Delete failed:", e));
-                        }
-                      }}
+                      className="text-gray-400 hover:text-red-600 px-2 min-h-9 flex-shrink-0"
+                      onClick={() => handleDelete(item.id)}
                       title="Delete item"
                     >
                       <Trash2 size={14} />
@@ -454,7 +521,7 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
         </div>
       ))}
 
-      {items.length === 0 && (
+      {!isLoading && items.length === 0 && (
         <div className="text-center py-8">
           <div className="text-4xl mb-2">📝</div>
           <p className="text-sm text-gray-500">
@@ -468,8 +535,8 @@ function SignUpTab({ channel }: { channel: import("@/concord-v2/lib/types").Chan
 
 // ── Chat Tab ─────────────────────────────────────────────────────────────────
 
-function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").ChannelV2 | undefined }) {
-  const { messages, sendMessage, deleteMessage } = useChannelChat(channel);
+function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
+  const { messages, isLoading, sendMessage, deleteMessage } = useChannelChat(channel);
   const { user } = useCurrentUser();
   const uploadFile = useUploadFile();
   const [input, setInput] = useState("");
@@ -477,11 +544,13 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll on new messages only when already near the bottom — never
+  // yank the viewport while someone is reading back through history.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   const handleSend = async () => {
@@ -501,7 +570,7 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
             return imeta;
           })
         : undefined;
-      await sendMessage(input, user.signer, attachmentTags);
+      await sendMessage(input, user.signer, user.pubkey, attachmentTags);
       setInput("");
       setPendingImages([]);
     } catch (e) {
@@ -531,34 +600,49 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
   };
 
   return (
-    <Card className="border-orange-200 flex flex-col h-[65vh]">
-      <CardHeader className="flex-shrink-0 pb-2">
+    <Card className="border-orange-200 flex flex-col h-[65dvh]">
+      <CardHeader className="flex-shrink-0 pb-2 pt-4">
         <CardTitle className="text-red-800 text-base">💬 Group Chat</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 overflow-hidden px-3 pb-3">
         {/* Messages — native scroll for reliability */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 overscroll-contain"
         >
-          <div className="space-y-2 py-1">
-            {messages.length === 0 ? (
-              <p className="text-center text-sm text-gray-400 py-8">
-                No messages yet. Say hello! 👋
-              </p>
-            ) : (
-              messages.map((msg) => (
+          {isLoading && messages.length === 0 ? (
+            <div className="space-y-3 py-2">
+              <div className="flex items-end gap-2">
+                <Skeleton className="size-8 rounded-full flex-shrink-0" />
+                <Skeleton className="h-10 w-48 rounded-2xl" />
+              </div>
+              <div className="flex items-end gap-2 justify-end">
+                <Skeleton className="h-10 w-40 rounded-2xl" />
+                <Skeleton className="size-8 rounded-full flex-shrink-0" />
+              </div>
+              <div className="flex items-end gap-2">
+                <Skeleton className="size-8 rounded-full flex-shrink-0" />
+                <Skeleton className="h-10 w-56 rounded-2xl" />
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
+            <p className="text-center text-sm text-gray-400 py-8">
+              No messages yet. Say hello! 👋
+            </p>
+          ) : (
+            <div className="space-y-2 py-1">
+              {messages.map((msg) => (
                 <ChatMessageRow
                   key={msg.id}
                   msg={msg}
                   isMine={msg.pubkey === user?.pubkey}
                   onDelete={user ? (id) => {
-                    deleteMessage(id, user.signer).catch((e) => console.error("Delete failed:", e));
+                    deleteMessage(id, user.signer, user.pubkey).catch((e) => console.error("Delete failed:", e));
                   } : undefined}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pending image previews */}
@@ -587,7 +671,7 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
         )}
 
         {/* Input row */}
-        <div className="flex gap-1 flex-shrink-0 items-end">
+        <div className="flex gap-1.5 flex-shrink-0 items-end">
           <input
             ref={fileInputRef}
             type="file"
@@ -599,7 +683,7 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadFile.isPending}
-            className="p-2 text-gray-500 hover:text-red-600 disabled:opacity-40 flex-shrink-0"
+            className="flex size-11 items-center justify-center text-gray-500 hover:text-red-600 active:text-red-700 disabled:opacity-40 flex-shrink-0 rounded-lg hover:bg-orange-50 transition-colors"
             title="Attach image"
           >
             <ImageIcon size={20} />
@@ -609,9 +693,10 @@ function ChatTab({ channel }: { channel: import("@/concord-v2/lib/types").Channe
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type a message..."
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
-            className="flex-1"
+            className="flex-1 text-base sm:text-sm h-11 rounded-full px-4"
+            enterKeyHint="send"
           />
-          <Button onClick={handleSend} className="bg-red-600 hover:bg-red-700 flex-shrink-0">
+          <Button onClick={handleSend} className="bg-red-600 hover:bg-red-700 active:bg-red-800 flex-shrink-0 h-11 px-5 rounded-full">
             Send
           </Button>
         </div>

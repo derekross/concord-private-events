@@ -90,7 +90,11 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
 
       return [...allRelays];
     },
-    eoseTimeout: 3000,
+    // After the first relay EOSEs, wait this long for stragglers before
+    // resolving the query. This value is the floor on EVERY query's latency,
+    // so keep it tight: slow relays are caught by polling intervals and the
+    // live subscription instead of blocking every read for seconds.
+    eoseTimeout: 800,
   }));
 
   // Derive the current signer from the active login. This mirrors the

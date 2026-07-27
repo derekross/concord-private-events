@@ -43,7 +43,6 @@ export function NostrSync() {
             const fetchedServers = parseBlossomServerList(event);
 
             if (fetchedServers.length > 0) {
-              console.log('Syncing Blossom server list from Nostr:', fetchedServers);
               updateConfig((current) => ({
                 ...current,
                 blossomServerMetadata: {

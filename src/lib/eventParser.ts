@@ -17,23 +17,23 @@ export interface ParsedEventDetails {
 
 // Patterns for extracting structured data from freeform text
 const DATE_PATTERNS = [
-  /\b(?:date|when)\s*[:\-]\s*(.+)/i,
+  /\b(?:date|when)\s*[:-]\s*(.+)/i,
   /\b(?:📅)\s*(.+)/i,
 ];
 
 const TIME_PATTERNS = [
-  /\b(?:time|when)\s*[:\-]\s*(.+)/i,
+  /\b(?:time|when)\s*[:-]\s*(.+)/i,
   /\b(?:🕐|⏰|🕒)\s*(.+)/i,
 ];
 
 const LOCATION_PATTERNS = [
-  /\b(?:location|where|address|venue|place|at)\s*[:\-]\s*(.+)/i,
+  /\b(?:location|where|address|venue|place|at)\s*[:-]\s*(.+)/i,
   /\b(?:📍|🗺️|🏠)\s*(.+)/i,
 ];
 
 // Full date+time combos like "July 27 at 3 PM" or "Aug 3, 2026 5:00pm"
 const DATETIME_COMBINED = [
-  /\b(?:date|when|event)\s*[:\-]\s*(.+)/i,
+  /\b(?:date|when|event)\s*[:-]\s*(.+)/i,
 ];
 
 function tryMatch(text: string, patterns: RegExp[]): string | undefined {

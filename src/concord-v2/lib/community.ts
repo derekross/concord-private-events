@@ -11,7 +11,7 @@ import {
   voiceMediaKey,
 } from "@/concord-v2/lib/derive";
 import type { FoldedControl } from "@/concord-v2/lib/control";
-import { capRelays, type ChannelV2, type CommunityV2, type VoiceKeys } from "@/concord-v2/lib/types";
+import type { ChannelV2, CommunityV2, VoiceKeys } from "@/concord-v2/lib/types";
 
 /**
  * Assemble the channels the member can actually read from the Control fold +

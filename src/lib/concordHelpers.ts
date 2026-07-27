@@ -5,10 +5,9 @@
  * without the full Armada control plane fold.
  */
 
-import { channelGroupKey, type GroupKey } from "@/concord-v2/lib/derive";
-import { KIND_WRAP } from "@/concord-v2/lib/kinds";
+import { channelGroupKey } from "@/concord-v2/lib/derive";
 import { openWrap, type OpenedEvent } from "@/concord-v2/lib/stream";
-import type { CommunityV2, ChannelV2, ChannelMetadata } from "@/concord-v2/lib/types";
+import type { CommunityV2, ChannelV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
 
 /**
@@ -64,6 +63,29 @@ export interface ChannelDef {
   isPrivate: boolean;
 }
 
+/**
+ * Memo of already-opened wraps, keyed by wrap id. Wraps are immutable relay
+ * events, so a wrap that decrypted once decrypts forever — without this, every
+ * polling refetch re-runs two NIP-44 decryptions and a Schnorr verify over the
+ * channel's entire history. `null` marks wraps that failed to open (not ours /
+ * malformed) so they aren't retried on every poll either.
+ */
+const openedWrapCache = new Map<string, OpenedEvent | null>();
+const OPENED_WRAP_CACHE_MAX = 3000;
+
+function cacheOpenedWrap(id: string, value: OpenedEvent | null) {
+  if (openedWrapCache.size >= OPENED_WRAP_CACHE_MAX) {
+    // Map iterates in insertion order: drop the oldest third.
+    const drop = Math.floor(OPENED_WRAP_CACHE_MAX / 3);
+    let i = 0;
+    for (const key of openedWrapCache.keys()) {
+      openedWrapCache.delete(key);
+      if (++i >= drop) break;
+    }
+  }
+  openedWrapCache.set(id, value);
+}
+
 /** Open all wraps for a channel's stream, returning decoded events. */
 export function openChannelWraps(wraps: NostrEvent[], channel: ChannelV2): OpenedEvent[] {
   const out: OpenedEvent[] = [];
@@ -72,10 +94,20 @@ export function openChannelWraps(wraps: NostrEvent[], channel: ChannelV2): Opene
   for (const wrap of wraps) {
     const stream = byPk.get(wrap.pubkey);
     if (!stream) continue;
+
+    const cached = openedWrapCache.get(wrap.id);
+    if (cached !== undefined) {
+      if (cached) out.push(cached);
+      continue;
+    }
+
     try {
-      out.push(openWrap(wrap, stream.group));
+      const opened = openWrap(wrap, stream.group);
+      cacheOpenedWrap(wrap.id, opened);
+      out.push(opened);
     } catch {
       // not ours / malformed
+      cacheOpenedWrap(wrap.id, null);
     }
   }
   return out;

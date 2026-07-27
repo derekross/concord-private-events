@@ -8,13 +8,11 @@
 
 import { useNostr } from "@nostrify/react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   EMPTY_COMMUNITY_LIST,
   isLive,
-  mergeCommunityLists,
   rehydrateCommunity,
   type CommunityList,
 } from "@/concord-v2/lib/communityList";

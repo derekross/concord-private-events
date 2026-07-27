@@ -195,7 +195,17 @@
     border-color: var(--color-border, currentcolor);
   }
 
+  html {
+    /* No gray flash on tap (mobile) — the app handles its own active states. */
+    -webkit-tap-highlight-color: transparent;
+    /* Avoid iOS text-size inflation in landscape. */
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
+    /* Block pull-to-refresh / overscroll navigation so the installed PWA
+       feels native; in-app scroll regions still scroll (overscroll-contain). */
+    overscroll-behavior-y: none;
   }
 }

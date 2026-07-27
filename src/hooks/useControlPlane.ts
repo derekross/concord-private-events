@@ -18,6 +18,7 @@ import {
 } from "@/concord-v2/lib/control";
 import { KIND_WRAP } from "@/concord-v2/lib/kinds";
 import type { CommunityV2 } from "@/concord-v2/lib/types";
+import type { NostrEvent } from "nostr-tools/pure";
 
 export interface ControlPlaneResult {
   folded: FoldedControl | undefined;
@@ -51,7 +52,7 @@ export function useControlPlane(community: CommunityV2 | undefined): ControlPlan
       );
 
       // Open the wraps using the control group keys
-      const editions = openControlWraps(wraps as any, groups);
+      const editions = openControlWraps(wraps as NostrEvent[], groups);
 
       // Fold the editions into current state
       const curPk = currentControlGroup(community).pk;
@@ -59,8 +60,8 @@ export function useControlPlane(community: CommunityV2 | undefined): ControlPlan
         community.rootEpoch > 0n
           ? new Set(
               wraps
-                .filter((w: any) => w.pubkey === curPk)
-                .map((w: any) => w.id)
+                .filter((w) => w.pubkey === curPk)
+                .map((w) => w.id)
             )
           : undefined;
 

@@ -19,10 +19,8 @@ import {
   type GroupKey,
 } from "@/concord-v2/lib/derive";
 import {
-  buildEditionRumor,
   parseEdition,
   toFoldEdition,
-  type AuthorityCitation,
   type ParsedEdition,
 } from "@/concord-v2/lib/edition";
 import {
@@ -39,7 +37,6 @@ import {
   canActOnPosition,
   emptyRoles,
   grantFromJSON,
-  grantToJSON,
   hasPermission,
   highestPosition,
   isAuthorized,
@@ -47,7 +44,6 @@ import {
   outranks,
   Permissions,
   roleFromJSON,
-  roleToJSON,
   type CommunityRoles,
   type MemberGrant,
   type Role,

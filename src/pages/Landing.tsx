@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCommunityMembership } from "@/hooks/useCommunityMembership";
@@ -15,11 +15,12 @@ export default function Landing() {
   const [inviteInput, setInviteInput] = useState("");
   const [inviteError, setInviteError] = useState("");
 
-  // Redirect members to the app
-  if (user && isMember) {
-    navigate("/app");
-    return null;
-  }
+  // Redirect members to the app (in an effect — never navigate during render)
+  useEffect(() => {
+    if (user && isMember) navigate("/app");
+  }, [user, isMember, navigate]);
+
+  if (user && isMember) return null;
 
   const handleInviteSubmit = () => {
     const trimmed = inviteInput.trim();
@@ -41,7 +42,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-12 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
       <div className="max-w-md w-full text-center space-y-8">
         {/* Hero */}
         <div className="space-y-4">

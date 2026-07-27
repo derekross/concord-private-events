@@ -40,10 +40,10 @@ export function QuickLoginDialog({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState('');
 
-  const metadata = author.data?.metadata;
+  const profile = author.data;
   const displayName =
-    metadata?.display_name || metadata?.name || genericName(pubkey);
-  const picture = metadata?.picture;
+    profile?.display_name || profile?.name || genericName(pubkey);
+  const picture = profile?.picture;
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
