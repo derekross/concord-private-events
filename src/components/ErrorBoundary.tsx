@@ -1,113 +1,50 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, type ReactNode } from "react";
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-  errorInfo: ErrorInfo | null;
-}
-
-interface ErrorBoundaryProps {
+interface Props {
   children: ReactNode;
   fallback?: ReactNode;
 }
 
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
 
+export class ErrorBoundary extends Component<Props, State> {
+  state: State = { hasError: false };
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    };
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
   }
 
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    return {
-      hasError: true,
-      error,
-    };
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("ErrorBoundary caught:", error, info);
   }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by ErrorBoundary:', error, errorInfo);
-
-    this.setState({
-      error,
-      errorInfo,
-    });
-  }
-
-  handleReset = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    });
-  };
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
+      if (this.props.fallback) return this.props.fallback;
       return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <div className="max-w-md w-full space-y-4">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-foreground mb-2">
-                Something went wrong
-              </h2>
-              <p className="text-muted-foreground">
-                An unexpected error occurred. The error has been reported.
-              </p>
-            </div>
-
-            <div className="bg-muted p-4 rounded-lg">
-              <details className="text-sm">
-                <summary className="cursor-pointer font-medium text-foreground">
-                  Error details
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <div>
-                    <strong className="text-foreground">Message:</strong>
-                    <p className="text-muted-foreground mt-1">
-                      {this.state.error?.message}
-                    </p>
-                  </div>
-                  {this.state.error?.stack && (
-                    <div>
-                      <strong className="text-foreground">Stack trace:</strong>
-                      <pre className="text-xs text-muted-foreground mt-1 overflow-auto max-h-32">
-                        {this.state.error.stack}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              </details>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={this.handleReset}
-                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-              >
-                Try again
-              </button>
-              <button
-                onClick={() => window.location.reload()}
-                className="flex-1 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 transition-colors"
-              >
-                Reload page
-              </button>
-            </div>
+        <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+          <div className="max-w-md w-full text-center space-y-4 p-6 bg-white/70 rounded-2xl border border-red-200">
+            <div className="text-5xl">🦐💥</div>
+            <h2 className="text-xl font-bold text-red-800">Something went wrong</h2>
+            <p className="text-sm text-gray-600">
+              {this.state.error?.message || "An unexpected error occurred"}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: undefined });
+                window.location.href = "/";
+              }}
+              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+            >
+              ← Back to home
+            </button>
           </div>
         </div>
       );
     }
-
     return this.props.children;
   }
 }

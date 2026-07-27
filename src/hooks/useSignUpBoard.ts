@@ -9,7 +9,7 @@
 import { useNostr } from "@nostrify/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
-import { KIND_WRAP, KIND_EDIT } from "@/concord-v2/lib/kinds";
+import { KIND_WRAP, KIND_EDIT, KIND_DELETE } from "@/concord-v2/lib/kinds";
 import {
   buildRumor,
   channelBindingTags,
@@ -20,6 +20,7 @@ import {
 import type { NostrEvent, EventTemplate } from "nostr-tools/pure";
 import type { ChannelV2 } from "@/concord-v2/lib/types";
 import { openChannelWraps } from "@/lib/concordHelpers";
+import { filterDeleted } from "@/lib/deleteUtils";
 import {
   KIND_SIGNUP_ITEM,
   parseSignUpItem,
@@ -33,7 +34,7 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
   const channelRef = useRef(channel);
   channelRef.current = channel;
 
-  const queryKey = ["sign-up-board", channel?.idHex];
+  const queryKey = ["sign-up-board", channel?.idHex] as const;
 
   const { data: items } = useQuery<SignUpItem[]>({
     queryKey,
@@ -48,12 +49,13 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       );
 
       const opened = openChannelWraps(wraps as NostrEvent[], ch);
+      const { active, deletedIds } = filterDeleted(opened);
 
-      // Collect items and edits
+      // Collect items and edits (excluding deleted)
       const itemMap = new Map<string, SignUpItem>();
       const editsByTarget = new Map<string, { content: string; ms: number; author: string }[]>();
 
-      for (const ev of opened) {
+      for (const ev of active) {
         if (ev.kind === KIND_SIGNUP_ITEM) {
           const item = parseSignUpItem(ev.content, ev.rumorId, ev.author, ev.createdAt);
           if (item) itemMap.set(ev.rumorId, item);
@@ -70,8 +72,15 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
         }
       }
 
+      // Remove items that have been deleted via kind-5
+      for (const id of deletedIds) {
+        itemMap.delete(id);
+      }
+
       // Apply edits (latest wins, original author or item creator only)
+      // Skip edits targeting deleted items
       for (const [targetId, edits] of editsByTarget) {
+        if (deletedIds.has(targetId)) continue;
         const item = itemMap.get(targetId);
         if (!item) continue;
         const sortedEdits = edits.sort((a, b) => b.ms - a.ms);
@@ -96,8 +105,10 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       });
     },
     enabled: !!channel,
+    // Keep cached data showing while background refetching happens.
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1000,
     refetchInterval: 10_000,
-    staleTime: 5_000,
   });
 
   const addItem = useCallback(
@@ -110,6 +121,20 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       if (!ch || !name.trim()) return;
 
       const pubkey = await getSignerPubkey(signer);
+
+      // Optimistic insert
+      const tempId = `pending-${Date.now()}`;
+      const optimisticItem: SignUpItem = {
+        id: tempId,
+        category: category as SignUpItem["category"],
+        name: name.trim(),
+        createdBy: pubkey,
+        claimedBy: undefined,
+        claimedAt: undefined,
+        notes: undefined,
+      };
+      queryClient.setQueryData<SignUpItem[]>(queryKey, (old = []) => [...old, optimisticItem]);
+
       const content = serializeSignUpItem({
         category: category as SignUpItem["category"],
         name: name.trim(),
@@ -130,9 +155,9 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       const wrap = wrapSeal(seal, ch.current.group);
 
       await nostr.event(wrap);
-      queryClient.invalidateQueries({ queryKey });
+      setTimeout(() => queryClient.invalidateQueries({ queryKey }), 500);
     },
-    [nostr, queryClient]
+    [nostr, queryClient, queryKey]
   );
 
   const claimItem = useCallback(
@@ -145,9 +170,19 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       if (!ch) return;
 
       const pubkey = await getSignerPubkey(signer);
+
+      // Optimistic claim
+      queryClient.setQueryData<SignUpItem[]>(queryKey, (old = []) =>
+        old.map((item) =>
+          item.id === itemId
+            ? { ...item, claimedBy: pubkey, claimedAt: Date.now() }
+            : item
+        )
+      );
+
       const content = serializeSignUpItem({
-        category: "seafood", // not used in edit, but required by type
-        name: "", // not used in edit
+        category: "seafood",
+        name: "",
         claimedBy: pubkey,
         claimedAt: Date.now(),
         notes: "",
@@ -168,9 +203,9 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       const wrap = wrapSeal(seal, ch.current.group);
 
       await nostr.event(wrap);
-      queryClient.invalidateQueries({ queryKey });
+      setTimeout(() => queryClient.invalidateQueries({ queryKey }), 500);
     },
-    [nostr, queryClient]
+    [nostr, queryClient, queryKey]
   );
 
   const unclaimItem = useCallback(
@@ -180,6 +215,15 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
     ) => {
       const ch = channelRef.current;
       if (!ch) return;
+
+      // Optimistic unclaim
+      queryClient.setQueryData<SignUpItem[]>(queryKey, (old = []) =>
+        old.map((item) =>
+          item.id === itemId
+            ? { ...item, claimedBy: undefined, claimedAt: undefined }
+            : item
+        )
+      );
 
       const pubkey = await getSignerPubkey(signer);
       const content = serializeSignUpItem({
@@ -205,9 +249,44 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       const wrap = wrapSeal(seal, ch.current.group);
 
       await nostr.event(wrap);
-      queryClient.invalidateQueries({ queryKey });
+      setTimeout(() => queryClient.invalidateQueries({ queryKey }), 500);
     },
-    [nostr, queryClient]
+    [nostr, queryClient, queryKey]
+  );
+
+  const deleteItem = useCallback(
+    async (
+      itemId: string,
+      signer: StreamSigner
+    ) => {
+      const ch = channelRef.current;
+      if (!ch || !itemId) return;
+
+      // Optimistic delete
+      queryClient.setQueryData<SignUpItem[]>(queryKey, (old = []) =>
+        old.filter((item) => item.id !== itemId)
+      );
+
+      const pubkey = await getSignerPubkey(signer);
+
+      const rumor = buildRumor({
+        kind: KIND_DELETE,
+        content: "deleted",
+        tags: [
+          ...channelBindingTags(ch.idHex, ch.current.epoch),
+          ["e", itemId],
+        ],
+        pubkey,
+        ms: Date.now(),
+      });
+
+      const seal = await sealRumor(rumor, 20013, ch.current.group, signer);
+      const wrap = wrapSeal(seal, ch.current.group);
+
+      await nostr.event(wrap);
+      // Background refetch will confirm
+    },
+    [nostr, queryClient, queryKey]
   );
 
   return {
@@ -215,6 +294,7 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
     addItem,
     claimItem,
     unclaimItem,
+    deleteItem,
   };
 }
 

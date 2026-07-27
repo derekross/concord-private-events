@@ -1,40 +1,34 @@
 /**
  * useCommunityMembership — check if the current user is a member of the
- * configured Concord V2 community by reading their Community List (kind 13302).
+ * configured Concord V2 community.
+ *
+ * Uses useCommunityData: if the community data loads (the user has keys
+ * for it in their Community List), they're a member. The owner is always
+ * a member by definition.
  */
 
-import { useNostr } from "@nostrify/react";
-import { useQuery } from "@tanstack/react-query";
-import { KIND_COMMUNITY_LIST } from "@/concord-v2/lib/kinds";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useCommunityData } from "@/hooks/useCommunityData";
 import { EVENT_CONFIG } from "@/lib/eventConfig";
 
-export function useCommunityMembership(pubkey: string | undefined) {
-  const { nostr } = useNostr();
+export function useCommunityMembership(_pubkey: string | undefined) {
+  const { user } = useCurrentUser();
+  const { community, isLoading } = useCommunityData();
 
-  return useQuery({
-    queryKey: ["community-membership", pubkey],
-    queryFn: async ({ signal }) => {
-      if (!pubkey) return false;
-      if (!EVENT_CONFIG.communityId) return false;
+  // The owner is always a member (case-insensitive hex compare)
+  const ownerHex = EVENT_CONFIG.communityOwner.toLowerCase();
+  const userHex = user?.pubkey?.toLowerCase();
+  const isOwner = userHex === ownerHex;
 
-      const [event] = await nostr.query(
-        [{ kinds: [KIND_COMMUNITY_LIST], authors: [pubkey] }],
-        { signal }
-      );
+  // If we successfully loaded the community object, the user has keys → member
+  // While loading, we don't know yet — return false but isLoading=true so
+  // callers can gate on isLoading rather than getting a false negative.
+  const isMember = Boolean(community) || isOwner;
 
-      if (!event) return false;
-
-      try {
-        const content = JSON.parse(event.content);
-        const memberships = Array.isArray(content) ? content : content.communities ?? [];
-        return memberships.some(
-          (m: { community_id?: string }) => m.community_id === EVENT_CONFIG.communityId
-        );
-      } catch {
-        return false;
-      }
-    },
-    enabled: !!pubkey && !!EVENT_CONFIG.communityId,
-    staleTime: 30_000,
-  });
+  return {
+    data: isMember,
+    // Stay loading while community data loads AND we're not the owner
+    // (owner can skip the wait). This prevents premature redirects.
+    isLoading: isLoading && !isOwner,
+  };
 }

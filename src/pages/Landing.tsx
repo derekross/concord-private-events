@@ -6,7 +6,7 @@ import { LoginArea } from "@/components/auth/LoginArea";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EVENT_CONFIG } from "@/lib/eventConfig";
-import { parseInviteLink } from "@/concord-v2/lib/invite";
+import { parseInviteLink, encodeFragment as concordEncodeFragment } from "@/concord-v2/lib/invite";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -34,9 +34,9 @@ export default function Landing() {
       return;
     }
 
-    // Navigate to the invite route with the naddr
+    // Navigate to the invite route, properly re-encoding the fragment
     const naddr = parsed.naddr;
-    const fragment = encodeFragment(parsed.token, parsed.bootstrapRelays);
+    const fragment = concordEncodeFragment(parsed.token, parsed.bootstrapRelays);
     navigate(`/invite/${naddr}#${fragment}`);
   };
 
@@ -115,11 +115,4 @@ export default function Landing() {
   );
 }
 
-/** Re-encode token + relays for the fragment. */
-function encodeFragment(token: Uint8Array, _relays: string[]): string {
-  // Simplified: just use the raw hex as a placeholder.
-  // The invite route will handle proper decoding.
-  return Array.from(token)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+

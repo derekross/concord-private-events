@@ -28,10 +28,15 @@ export const EVENT_CONFIG: EventConfig = {
   name: "Ross Seafood Boil",
   emoji: "🦐",
   subtitle: "Annual family gathering",
-  // These will be set after Derek creates the community
-  communityId: "",
-  communityOwner: "",
-  relays: ["wss://relay.ditto.pub", "wss://relay.primal.net"],
+  // Community created in Armada: https://armada.buzz/c/abb8a4b895bc4d023d3aec8d367b5c6acd58ee7593a6716c130e13728d9ed89e
+  communityId: "abb8a4b895bc4d023d3aec8d367b5c6acd58ee7593a6716c130e13728d9ed89e",
+  // Owner: Derek Ross (npub18ams6ewn5aj2n3wt2qawzglx9mr4nzksxhvrdc4gzrecw7n5tvjqctp424)
+  communityOwner: "3f770d65d3a764a9c5cb503ae123e62ec7598ad035d836e2a810f3877a745b24",
+  relays: [
+    "wss://nostr-relay.derekross.me",
+    "wss://nos.lol",
+    "wss://relay.ditto.pub",
+  ],
   channels: {
     eventInfo: "event-info",
     signUp: "sign-up",

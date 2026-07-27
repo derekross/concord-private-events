@@ -1,34 +1,54 @@
-import { type NostrEvent, type NostrMetadata, NSchema as n } from '@nostrify/nostrify';
-import { useNostr } from '@nostrify/react';
-import { useQuery } from '@tanstack/react-query';
+/**
+ * useAuthor — resolve a pubkey's kind-0 profile (display name, picture, etc.)
+ * Lightweight version of Armada's useAuthor.
+ */
+import { useNostr } from "@nostrify/react";
+import { useQuery } from "@tanstack/react-query";
+import { NSchema as n } from "@nostrify/nostrify";
+
+export interface AuthorProfile {
+  pubkey: string;
+  name?: string;
+  display_name?: string;
+  picture?: string;
+  about?: string;
+  nip05?: string;
+}
 
 export function useAuthor(pubkey: string | undefined) {
   const { nostr } = useNostr();
 
-  return useQuery<{ event?: NostrEvent; metadata?: NostrMetadata }>({
-    queryKey: ['nostr', 'author', pubkey ?? ''],
-    queryFn: async () => {
-      if (!pubkey) {
-        return {};
-      }
+  return useQuery<AuthorProfile | undefined>({
+    queryKey: ["author", pubkey ?? ""],
+    queryFn: async ({ signal }) => {
+      if (!pubkey) return undefined;
 
       const [event] = await nostr.query(
-        [{ kinds: [0], authors: [pubkey!], limit: 1 }],
-        { signal: AbortSignal.timeout(1500) },
+        [{ kinds: [0], authors: [pubkey], limit: 1 }],
+        { signal }
       );
 
-      if (!event) {
-        throw new Error('No event found');
-      }
+      if (!event) return undefined;
 
       try {
         const metadata = n.json().pipe(n.metadata()).parse(event.content);
-        return { metadata, event };
+        return { pubkey, ...metadata };
       } catch {
-        return { event };
+        return { pubkey };
       }
     },
-    staleTime: 5 * 60 * 1000, // Keep cached data fresh for 5 minutes
-    retry: 3,
+    enabled: !!pubkey,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
+}
+
+/** Get the best display name for an author */
+export function getDisplayName(profile: AuthorProfile | undefined, pubkey: string): string {
+  if (profile?.display_name) return profile.display_name;
+  if (profile?.name) return profile.name;
+  // Short npub fallback
+  return pubkey.slice(0, 8) + "…";
 }
