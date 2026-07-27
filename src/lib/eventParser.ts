@@ -1,17 +1,28 @@
 /**
  * Parse structured event details from channel messages.
  *
- * Looks for common patterns like "Date: July 27", "Time: 3:00 PM",
- * "Location: 123 Main St", "Where: ...", "When: ..." in messages
- * posted to the event-info channel.
- *
- * Falls back to showing raw messages if no structured data is found.
+ * Line-based: every line of every message is matched against the known
+ * patterns (date, time, location, payment methods). A single message can
+ * carry the whole event sheet, and any line that matches nothing becomes a
+ * note. First match per field wins (oldest posts take precedence; owners
+ * update in place via kind-3302 edits).
  */
+
+export interface ParsedPayment {
+  method: "cashapp" | "venmo" | "lightning";
+  /** Display id as entered ($cashtag / @user / lightning address). */
+  id: string;
+  /** Optional free-form amount string ("$25", "25 USD", "21k sats"). */
+  amount?: string;
+  /** Deep/universal link to pay. */
+  url: string;
+}
 
 export interface ParsedEventDetails {
   date?: string;
   time?: string;
   location?: string;
+  payments: ParsedPayment[];
   notes: string[];
 }
 
@@ -22,7 +33,7 @@ const DATE_PATTERNS = [
 ];
 
 const TIME_PATTERNS = [
-  /\b(?:time|when)\s*[:-]\s*(.+)/i,
+  /\b(?:time)\s*[:-]\s*(.+)/i,
   /\b(?:🕐|⏰|🕒)\s*(.+)/i,
 ];
 
@@ -30,6 +41,12 @@ const LOCATION_PATTERNS = [
   /\b(?:location|where|address|venue|place|at)\s*[:-]\s*(.+)/i,
   /\b(?:📍|🗺️|🏠)\s*(.+)/i,
 ];
+
+// Payment methods: `Label: <id> [amount…]` — id is the first token, the
+// rest of the line is a free-form amount shown verbatim.
+const CASHAPP_PATTERN = /\b(?:cash\s?app|cashtag)\s*[:-]\s*(\$\S+)(?:\s+(.+))?/i;
+const VENMO_PATTERN = /\bvenmo\s*[:-]\s*(@?\S+)(?:\s+(.+))?/i;
+const LIGHTNING_PATTERN = /\b(?:lightning|lud16|ln|zap)\s*[:-]\s*(\S+)(?:\s+(.+))?/i;
 
 // Full date+time combos like "July 27 at 3 PM" or "Aug 3, 2026 5:00pm"
 const DATETIME_COMBINED = [
@@ -46,48 +63,114 @@ function tryMatch(text: string, patterns: RegExp[]): string | undefined {
   return undefined;
 }
 
+/** First plain number inside an amount string ("$25" / "25 USD" → "25"). */
+function numericAmount(amount: string | undefined): string | undefined {
+  if (!amount) return undefined;
+  const m = amount.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  return m?.[1];
+}
+
+/** Cash App universal link; carries the amount when one is set. */
+export function cashAppUrl(id: string, amount?: string): string {
+  const tag = id.replace(/^\$+/, "");
+  const n = numericAmount(amount);
+  return `https://cash.app/$${tag}${n ? `/${n}` : ""}`;
+}
+
+/** Venmo universal link; with an amount, goes straight to the pay sheet. */
+export function venmoUrl(id: string, amount?: string): string {
+  const user = id.replace(/^@+/, "");
+  const n = numericAmount(amount);
+  return n
+    ? `https://venmo.com/?txn=pay&recipients=${encodeURIComponent(user)}&amount=${encodeURIComponent(n)}`
+    : `https://venmo.com/u/${encodeURIComponent(user)}`;
+}
+
+/** Lightning address / LNURL — the `lightning:` scheme opens wallet apps. */
+export function lightningUrl(id: string): string {
+  return `lightning:${id}`;
+}
+
 export function parseEventDetails(messages: { content: string; createdAt: number }[]): ParsedEventDetails {
-  const details: ParsedEventDetails = { notes: [] };
+  const details: ParsedEventDetails = { payments: [], notes: [] };
+  const seenMethods = new Set<string>();
 
-  // Combine all message content, but also check each individually
   for (const msg of messages) {
-    const text = msg.content;
+    for (const rawLine of msg.content.split("\n")) {
+      const text = rawLine.trim();
+      if (!text) continue;
 
-    // Try combined date+time first
-    if (!details.date && !details.time) {
-      const combined = tryMatch(text, DATETIME_COMBINED);
-      if (combined) {
-        // Try to split into date and time
-        const timeMatch = combined.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))/);
-        const dateMatch = combined.replace(timeMatch?.[0] ?? "", "").replace(/[,@]+/g, "").trim();
-        if (timeMatch) {
-          details.time = timeMatch[0].trim();
-          details.date = dateMatch || undefined;
-        } else {
-          details.date = combined;
+      // Combined date+time first ("Date: July 27 at 3 PM")
+      if (!details.date && !details.time) {
+        const combined = tryMatch(text, DATETIME_COMBINED);
+        if (combined) {
+          const timeMatch = combined.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))/);
+          const dateMatch = combined.replace(timeMatch?.[0] ?? "", "").replace(/[,@]+/g, "").trim();
+          if (timeMatch) {
+            details.time = timeMatch[0].trim();
+            details.date = dateMatch || undefined;
+          } else {
+            details.date = combined;
+          }
+          continue;
         }
       }
-    }
 
-    if (!details.date) {
-      details.date = tryMatch(text, DATE_PATTERNS);
-    }
+      if (!details.date) {
+        const date = tryMatch(text, DATE_PATTERNS);
+        if (date) {
+          details.date = date;
+          continue;
+        }
+      }
 
-    if (!details.time) {
-      details.time = tryMatch(text, TIME_PATTERNS);
-    }
+      if (!details.time) {
+        const time = tryMatch(text, TIME_PATTERNS);
+        if (time) {
+          details.time = time;
+          continue;
+        }
+      }
 
-    if (!details.location) {
-      details.location = tryMatch(text, LOCATION_PATTERNS);
-    }
+      if (!details.location) {
+        const location = tryMatch(text, LOCATION_PATTERNS);
+        if (location) {
+          details.location = location;
+          continue;
+        }
+      }
 
-    // If this message didn't contribute structured data, keep it as a note
-    const contributed = DATE_PATTERNS.some((p) => p.test(text)) ||
-      TIME_PATTERNS.some((p) => p.test(text)) ||
-      LOCATION_PATTERNS.some((p) => p.test(text));
+      // Payment methods (first per method wins)
+      if (!seenMethods.has("cashapp")) {
+        const m = text.match(CASHAPP_PATTERN);
+        if (m) {
+          seenMethods.add("cashapp");
+          const amount = m[2]?.trim() || undefined;
+          details.payments.push({ method: "cashapp", id: m[1], amount, url: cashAppUrl(m[1], amount) });
+          continue;
+        }
+      }
+      if (!seenMethods.has("venmo")) {
+        const m = text.match(VENMO_PATTERN);
+        if (m) {
+          seenMethods.add("venmo");
+          const amount = m[2]?.trim() || undefined;
+          details.payments.push({ method: "venmo", id: m[1], amount, url: venmoUrl(m[1], amount) });
+          continue;
+        }
+      }
+      if (!seenMethods.has("lightning")) {
+        const m = text.match(LIGHTNING_PATTERN);
+        if (m) {
+          seenMethods.add("lightning");
+          const amount = m[2]?.trim() || undefined;
+          details.payments.push({ method: "lightning", id: m[1], amount, url: lightningUrl(m[1]) });
+          continue;
+        }
+      }
 
-    if (!contributed && text.trim().length > 0) {
-      details.notes.push(text.trim());
+      // Nothing matched → it's a note
+      details.notes.push(text);
     }
   }
 
@@ -96,11 +179,11 @@ export function parseEventDetails(messages: { content: string; createdAt: number
 
 /**
  * Generate a Google Calendar "add event" URL from parsed details.
+ * (Opens the Google Calendar app when installed, web otherwise.)
  */
 export function googleCalendarUrl(details: ParsedEventDetails, title: string): string | null {
   if (!details.date) return null;
 
-  // Try to parse the date/time into something Google Calendar understands
   const dateStr = details.date;
   const timeStr = details.time ?? "";
 
@@ -112,12 +195,10 @@ export function googleCalendarUrl(details: ParsedEventDetails, title: string): s
   params.set("text", title);
 
   if (isValid) {
-    // Format as YYYYMMDDTHHMMSS (Google Calendar format)
     const start = formatGoogleDate(parsed);
     const end = formatGoogleDate(new Date(parsed.getTime() + 3 * 60 * 60 * 1000)); // 3 hour default
     params.set("dates", `${start}/${end}`);
   } else {
-    // Can't parse date — just include it in details
     params.set("details", `${dateStr}${timeStr ? " " + timeStr : ""}`);
   }
 
@@ -136,17 +217,22 @@ function formatGoogleDate(date: Date): string {
   );
 }
 
-/**
- * Generate a Google Maps search URL for a location string.
- */
+/** Google Maps search URL (opens the app when installed, web otherwise). */
 export function googleMapsUrl(location: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
 }
 
+/** Apple Maps URL — opens the Maps app on iOS/macOS. */
+export function appleMapsUrl(location: string): string {
+  return `https://maps.apple.com/?q=${encodeURIComponent(location)}`;
+}
+
 /**
- * Generate an Apple Calendar (.ics) data URL as a fallback.
+ * Raw .ics file content for the event (Apple Calendar / Outlook / any
+ * calendar app). Serve as a blob download — data: URLs are unreliable in
+ * iOS Safari.
  */
-export function icsDataUrl(details: ParsedEventDetails, title: string): string | null {
+export function icsContent(details: ParsedEventDetails, title: string): string | null {
   if (!details.date) return null;
 
   const dateStr = details.date;
@@ -162,7 +248,7 @@ export function icsDataUrl(details: ParsedEventDetails, title: string): string |
     return `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}T${pad(end.getHours())}${pad(end.getMinutes())}00`;
   })();
 
-  const ics = [
+  return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Ross Seafood Boil//EN",
@@ -176,6 +262,4 @@ export function icsDataUrl(details: ParsedEventDetails, title: string): string |
     "END:VEVENT",
     "END:VCALENDAR",
   ].filter(Boolean).join("\n");
-
-  return `data:text/calendar;charset=utf8,${encodeURIComponent(ics)}`;
 }

@@ -37,8 +37,8 @@ export default function InviteLanding() {
   }, [invite.status, navigate]);
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-4 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
-      <div className="max-w-md w-full text-center space-y-4">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-2 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+      <div className="w-full text-center space-y-4">
         {invite.status === "error" && (
           <>
             <div className="text-5xl">😔</div>

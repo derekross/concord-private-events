@@ -42,8 +42,8 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-12 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
-      <div className="max-w-md w-full text-center space-y-8">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-2 py-12 bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
+      <div className="w-full text-center space-y-8">
         {/* Hero */}
         <div className="space-y-4">
           <div className="text-7xl mb-2 animate-bounce-slow">{EVENT_CONFIG.emoji}</div>

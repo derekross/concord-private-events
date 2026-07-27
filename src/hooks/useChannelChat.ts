@@ -267,5 +267,53 @@ export function useChannelChat(channel: ChannelV2 | undefined) {
     [nostr, queryClient, queryKey]
   );
 
-  return { messages: messages ?? [], isLoading, sendMessage, deleteMessage };
+  /**
+   * Edit one of the user's own messages (kind 3302, author-only latest-wins).
+   * Optimistically rewrites the cached content; the live subscription and
+   * reconciliation poll settle the final state.
+   */
+  const editMessage = useCallback(
+    async (
+      rumorId: string,
+      newContent: string,
+      signer: StreamSigner,
+      senderPubkey: string,
+    ) => {
+      const ch = channelRef.current;
+      if (!ch || !rumorId || !newContent.trim()) return;
+
+      queryClient.setQueryData<ChatMessage[]>(queryKey, (old = []) =>
+        old.map((m) =>
+          m.id === rumorId ? { ...m, content: newContent.trim(), edited: true } : m
+        )
+      );
+
+      const rumor = buildRumor({
+        kind: KIND_EDIT,
+        content: newContent.trim(),
+        tags: [
+          ...channelBindingTags(ch.idHex, ch.current.epoch),
+          ["e", rumorId],
+        ],
+        pubkey: senderPubkey,
+        ms: Date.now(),
+      });
+
+      try {
+        const seal = await sealRumor(rumor, 20013, ch.current.group, signer);
+        const wrap = wrapSeal(seal, ch.current.group);
+        await nostr.event(wrap);
+      } catch (err) {
+        queryClient.invalidateQueries({ queryKey });
+        throw err;
+      }
+
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey });
+      }, 1000);
+    },
+    [nostr, queryClient, queryKey]
+  );
+
+  return { messages: messages ?? [], isLoading, sendMessage, deleteMessage, editMessage };
 }

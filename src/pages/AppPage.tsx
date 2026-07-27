@@ -6,7 +6,15 @@ import { useCommunityData } from "@/hooks/useCommunityData";
 import { useControlPlane } from "@/hooks/useControlPlane";
 import { useChannels } from "@/hooks/useChannels";
 import { EVENT_CONFIG, CATEGORY_LABELS, SIGN_UP_CATEGORIES, type SignUpCategory } from "@/lib/eventConfig";
-import { parseEventDetails, googleCalendarUrl, googleMapsUrl, icsDataUrl } from "@/lib/eventParser";
+import {
+  parseEventDetails,
+  googleCalendarUrl,
+  googleMapsUrl,
+  appleMapsUrl,
+  icsContent,
+  type ParsedEventDetails,
+} from "@/lib/eventParser";
+import { isAppleDevice } from "@/lib/device";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,22 +26,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSignUpBoard } from "@/hooks/useSignUpBoard";
-import { useChannelChat } from "@/hooks/useChannelChat";
+import { useChannelChat, type ChatMessage } from "@/hooks/useChannelChat";
 import { useLiveChannelEvents } from "@/hooks/useLiveChannelEvents";
 import { useDecryptedImage } from "@/hooks/useDecryptedImage";
 import { useUploadFile } from "@/hooks/useUploadFile";
+import { useAuthor, getDisplayName } from "@/hooks/useAuthor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRef, useEffect } from "react";
-import { Loader2, ImageIcon, X, Trash2, CalendarPlus, MapPin, Clock, CalendarDays } from "lucide-react";
+import { useRef, useEffect, useMemo } from "react";
+import { Loader2, ImageIcon, X, Trash2, ChevronDown, MapPin, Clock, CalendarDays, Pencil } from "lucide-react";
 import { ChatMessageRow } from "@/components/chat/ChatMessageRow";
 import { useSeoMeta } from "@unhead/react";
 import type { CommunityMetadata } from "@/concord-v2/lib/types";
 import type { ChannelV2 } from "@/concord-v2/lib/types";
 
 type Tab = "details" | "signup" | "chat";
+
+const TAB_ITEMS: { value: Tab; emoji: string; label: string }[] = [
+  { value: "details", emoji: "📋", label: "Details" },
+  { value: "signup", emoji: "📝", label: "Sign-Up" },
+  { value: "chat", emoji: "💬", label: "Chat" },
+];
 
 export default function AppPage() {
   const navigate = useNavigate();
@@ -59,7 +80,6 @@ export default function AppPage() {
 
   // Live subscription: new chat messages land in the query cache the moment
   // they hit a relay; edits/deletes/sign-up changes trigger instant refolds.
-  // Polling remains only as a reconciliation net.
   useLiveChannelEvents(channels);
 
   // Redirects live in effects — never navigate during render.
@@ -90,8 +110,8 @@ export default function AppPage() {
     return (
       <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
         <AppHeader name={communityName} />
-        <div className="px-4 py-6 space-y-4">
-          <Skeleton className="h-32 w-full" />
+        <div className="px-2 py-6 space-y-4">
+          <Skeleton className="h-36 w-full" />
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500 pt-4">
             <Loader2 size={16} className="animate-spin" />
             Loading channels...
@@ -108,25 +128,18 @@ export default function AppPage() {
     <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
       <AppHeader name={communityName} metadata={folded?.metadata} />
 
-      {/* Main Content — full bleed; bottom padding clears the mobile tab bar */}
-      <main className="px-4 pt-4 pb-28 sm:pb-6">
+      {/* Main Content — full bleed; bottom padding clears the mobile nav bar */}
+      <main className="px-2 pt-2 pb-28 sm:pb-6">
         <CommunityHero metadata={folded?.metadata} />
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-4">
-          {/* Mobile: fixed bottom app-style nav bar. Desktop: static top tabs. */}
-          <TabsList className="grid w-full grid-cols-3 mb-4 h-12 max-sm:fixed max-sm:bottom-0 max-sm:inset-x-0 max-sm:z-20 max-sm:mb-0 max-sm:h-auto max-sm:rounded-none max-sm:border-t max-sm:border-orange-200 max-sm:bg-white/95 max-sm:backdrop-blur-sm max-sm:pb-[env(safe-area-inset-bottom)]">
-            <TabsTrigger value="details" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
-              <span className="max-sm:text-2xl max-sm:leading-none">📋</span>
-              <span className="max-sm:text-xs max-sm:font-medium">Details</span>
-            </TabsTrigger>
-            <TabsTrigger value="signup" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
-              <span className="max-sm:text-2xl max-sm:leading-none">📝</span>
-              <span className="max-sm:text-xs max-sm:font-medium">Sign-Up</span>
-            </TabsTrigger>
-            <TabsTrigger value="chat" className="max-sm:flex-col max-sm:gap-1 max-sm:py-3 max-sm:rounded-none">
-              <span className="max-sm:text-2xl max-sm:leading-none">💬</span>
-              <span className="max-sm:text-xs max-sm:font-medium">Chat</span>
-            </TabsTrigger>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-3">
+          {/* Desktop tabs (mobile gets the bottom nav bar) */}
+          <TabsList className="grid w-full grid-cols-3 mb-4 max-sm:hidden">
+            {TAB_ITEMS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.emoji} {item.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           {/* forceMount keeps every tab's query alive from first render:
@@ -144,6 +157,8 @@ export default function AppPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <MobileTabBar tab={tab} onChange={setTab} />
     </div>
   );
 }
@@ -154,11 +169,11 @@ function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetad
   const icon = useDecryptedImage(metadata?.icon);
 
   return (
-    <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-4 pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-3 pt-[env(safe-area-inset-top)]">
       <div className="flex items-center justify-between py-3">
         <div className="flex items-center gap-2 min-w-0">
           {icon ? (
-            <img src={icon} alt="" className="size-7 rounded-lg object-cover flex-shrink-0" />
+            <img src={icon} alt="" className="size-8 rounded-lg object-cover flex-shrink-0" />
           ) : (
             <span className="text-2xl flex-shrink-0">{EVENT_CONFIG.emoji}</span>
           )}
@@ -170,82 +185,240 @@ function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetad
   );
 }
 
-// ── Community Hero (banner / icon / description) ─────────────────────────────
+// ── Mobile Bottom Nav ────────────────────────────────────────────────────────
+
+function MobileTabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-20 sm:hidden" aria-label="Sections">
+      <div className="rounded-t-3xl bg-gradient-to-r from-red-600 via-red-500 to-orange-500 shadow-[0_-6px_24px_rgba(190,18,60,0.35)] pt-2 pb-[env(safe-area-inset-bottom)]">
+        <div className="grid grid-cols-3">
+          {TAB_ITEMS.map((item) => {
+            const active = tab === item.value;
+            return (
+              <button
+                key={item.value}
+                onClick={() => onChange(item.value)}
+                aria-current={active ? "page" : undefined}
+                className="flex flex-col items-center gap-0.5 py-1.5"
+              >
+                <span
+                  className={`flex size-12 items-center justify-center rounded-full text-2xl transition-all duration-200 ${
+                    active
+                      ? "bg-white shadow-lg motion-safe:scale-110 motion-safe:-translate-y-1"
+                      : "bg-white/15"
+                  }`}
+                >
+                  {item.emoji}
+                </span>
+                <span className={`text-[11px] font-bold tracking-wide ${active ? "text-white" : "text-white/75"}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+// ── Community Hero (banner / description) ────────────────────────────────────
 
 function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
   const banner = useDecryptedImage(metadata?.banner);
   const [expanded, setExpanded] = useState(false);
 
-  const name = metadata?.name ?? EVENT_CONFIG.name;
   const description = metadata?.description ?? EVENT_CONFIG.subtitle;
   // Offer expand/collapse only for genuinely long descriptions.
   const isLong = (description?.length ?? 0) > 140;
 
   return (
-    <div className="-mx-4 bg-gray-900">
+    <div className="-mx-2 bg-gray-900">
       <div className="relative h-36 sm:h-44">
         {banner ? (
           <img src={banner} alt="" className="absolute inset-0 size-full object-cover" />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-red-600 via-orange-500 to-amber-400" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
-        {/* Community icon lives in the top-left app header, not here. */}
-        <div className="absolute bottom-3 left-4 right-4">
-          <h2 className="text-2xl font-bold text-white drop-shadow-sm">{name}</h2>
-          {description && (
-            <p className={`text-sm text-white/85 ${expanded ? "" : "line-clamp-2"}`}>
+        {description && (
+          <div className="absolute inset-x-2 bottom-2 rounded-xl bg-black/50 backdrop-blur-sm px-3.5 py-2.5 shadow-lg">
+            <p className={`text-sm leading-snug text-white ${expanded ? "" : "line-clamp-2"}`}>
               {description}
             </p>
-          )}
-          {isLong && (
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="text-xs font-semibold text-white/90 underline underline-offset-2 mt-0.5 hover:text-white"
-            >
-              {expanded ? "Show less" : "Read more"}
-            </button>
-          )}
-        </div>
+            {isLong && (
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="text-xs font-semibold text-orange-200 mt-1 hover:text-white"
+              >
+                {expanded ? "Show less" : "Read more"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+// ── Calendar / Maps pickers (device-aware) ───────────────────────────────────
+
+function CalendarMenu({ details }: { details: ParsedEventDetails }) {
+  const gcalUrl = googleCalendarUrl(details, EVENT_CONFIG.name);
+  const ics = icsContent(details, EVENT_CONFIG.name);
+
+  // Blob URL for the .ics — data: URLs are unreliable in iOS Safari.
+  const icsUrl = useMemo(
+    () => (ics ? URL.createObjectURL(new Blob([ics], { type: "text/calendar" })) : null),
+    [ics]
+  );
+  useEffect(() => {
+    return () => {
+      if (icsUrl) URL.revokeObjectURL(icsUrl);
+    };
+  }, [icsUrl]);
+
+  if (!gcalUrl && !icsUrl) return null;
+
+  const chip =
+    "inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium text-white";
+
+  const appleItem = icsUrl && (
+    <DropdownMenuItem asChild>
+      <a href={icsUrl} download="event.ics" className="cursor-pointer">
+        🍎 Apple Calendar (.ics)
+      </a>
+    </DropdownMenuItem>
+  );
+  const googleItem = gcalUrl && (
+    <DropdownMenuItem asChild>
+      <a href={gcalUrl} target="_blank" rel="noopener noreferrer" className="cursor-pointer">
+        📅 Google Calendar
+      </a>
+    </DropdownMenuItem>
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className={chip}>
+          <CalendarDays size={15} />
+          Add to Calendar
+          <ChevronDown size={14} className="opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {isAppleDevice() ? (
+          <>
+            {appleItem}
+            {googleItem}
+          </>
+        ) : (
+          <>
+            {googleItem}
+            {appleItem}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MapMenu({ location }: { location: string }) {
+  const gmapsUrl = googleMapsUrl(location);
+  const appleUrl = appleMapsUrl(location);
+
+  const chip =
+    "inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors px-4 py-2 text-sm font-medium text-white";
+
+  // Non-Apple devices: Google Maps is the only useful option — direct link.
+  if (!isAppleDevice()) {
+    return (
+      <a href={gmapsUrl} target="_blank" rel="noopener noreferrer" className={chip}>
+        <MapPin size={15} />
+        Open in Maps
+      </a>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className={chip}>
+          <MapPin size={15} />
+          Open in Maps
+          <ChevronDown size={14} className="opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem asChild>
+          <a href={appleUrl} target="_blank" rel="noopener noreferrer" className="cursor-pointer">
+            🍎 Apple Maps
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={gmapsUrl} target="_blank" rel="noopener noreferrer" className="cursor-pointer">
+            🗺️ Google Maps
+          </a>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // ── Event Details Tab ────────────────────────────────────────────────────────
 
+/** Matches lines the parser consumes (mirrors eventParser patterns). */
+const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
+
 function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
-  const { messages, isLoading } = useChannelChat(channel);
+  const { messages, isLoading, sendMessage, editMessage } = useChannelChat(channel);
+  const { user } = useCurrentUser();
+  const [composerOpen, setComposerOpen] = useState(false);
+
+  const isOwner = Boolean(
+    user?.pubkey && EVENT_CONFIG.communityOwner &&
+    user.pubkey.toLowerCase() === EVENT_CONFIG.communityOwner.toLowerCase()
+  );
 
   const details = parseEventDetails(messages);
-  const calUrl = googleCalendarUrl(details, EVENT_CONFIG.name);
-  const icsUrl = icsDataUrl(details, EVENT_CONFIG.name);
-  const mapsUrl = details.location ? googleMapsUrl(details.location) : null;
   const hasAnyDetails = details.date || details.time || details.location;
+
+  // The message the owner edits: their oldest structured-details post.
+  const ownerMessage = useMemo(() => {
+    if (!user) return undefined;
+    return messages
+      .filter((m) => m.pubkey === user.pubkey && STRUCTURED_LINE.test(m.content))
+      .sort((a, b) => a.createdAt - b.createdAt)[0];
+  }, [messages, user]);
 
   // True first load (no cached data yet) → skeletons, not a fake empty state.
   if (isLoading && messages.length === 0) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-32 w-full rounded-2xl" />
-        <Skeleton className="h-24 w-full rounded-2xl" />
+      <div className="space-y-3">
+        <Skeleton className="h-36 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {!hasAnyDetails && (
+    <div className="space-y-3">
+      {!hasAnyDetails && details.payments.length === 0 && (
         <Card className="border-dashed border-orange-300">
-          <CardContent className="py-10 px-6 text-center">
+          <CardContent className="py-10 px-4 text-center">
             <div className="text-5xl mb-3">🦐</div>
-            <p className="text-base font-medium text-gray-700 mb-2">No event details posted yet</p>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
-              Post info to the {channel?.name ?? "event-info"} channel in Armada using formats like{" "}
-              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Date: Aug 3</code>,{" "}
-              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Time: 3 PM</code>,{" "}
-              <code className="bg-orange-50 px-1.5 py-0.5 rounded text-red-700">Location: 123 Main St</code>
-            </p>
+            {isOwner ? (
+              <>
+                <p className="text-base font-medium text-gray-700 mb-1">You're the host — add the details!</p>
+                <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                  Use the editor below to post the date, time, location, and payment info.
+                </p>
+              </>
+            ) : (
+              <p className="text-base font-medium text-gray-700">
+                No event details yet — the host hasn't posted them. Check back soon!
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -270,30 +443,9 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
               )}
             </div>
           </div>
-          {(calUrl || icsUrl) && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {calUrl && (
-                <a
-                  href={calUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium"
-                >
-                  <CalendarPlus size={15} />
-                  Google Calendar
-                </a>
-              )}
-              {icsUrl && (
-                <a
-                  href={icsUrl}
-                  download="seafood-boil.ics"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors px-4 py-2 text-sm font-medium"
-                >
-                  📥 Apple Calendar (.ics)
-                </a>
-              )}
-            </div>
-          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <CalendarMenu details={details} />
+          </div>
         </div>
       )}
 
@@ -311,19 +463,52 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
               </p>
             </div>
           </div>
-          {mapsUrl && (
-            <div className="mt-4">
-              <a
-                href={mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors px-4 py-2 text-sm font-medium text-white"
-              >
-                <MapPin size={15} />
-                Open in Maps
-              </a>
+          <div className="mt-4">
+            <MapMenu location={details.location} />
+          </div>
+        </div>
+      )}
+
+      {/* Chip In — payment methods for the host */}
+      {details.payments.length > 0 && (
+        <div className="rounded-2xl bg-white border border-orange-200 p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-green-100 flex-shrink-0 text-3xl">
+              💸
             </div>
-          )}
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] uppercase tracking-widest text-gray-500 font-semibold">Chip In</p>
+              <p className="text-xl font-semibold text-gray-900 leading-snug">Send the host money</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {details.payments.map((p) => (
+              <a
+                key={p.method}
+                href={p.url}
+                target={p.method === "lightning" ? undefined : "_blank"}
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3 hover:bg-orange-100 active:bg-orange-200 transition-colors"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <span className="text-2xl flex-shrink-0">
+                    {p.method === "cashapp" ? "💵" : p.method === "venmo" ? "📲" : "⚡"}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900">
+                      {p.method === "cashapp" ? "Cash App" : p.method === "venmo" ? "Venmo" : "Bitcoin Lightning"}
+                    </span>
+                    <span className="block text-xs text-gray-500 truncate">{p.id}</span>
+                  </span>
+                </span>
+                {p.amount && (
+                  <Badge className="bg-green-600 hover:bg-green-600 text-white flex-shrink-0">
+                    {p.amount}
+                  </Badge>
+                )}
+              </a>
+            ))}
+          </div>
         </div>
       )}
 
@@ -343,19 +528,163 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
         </Card>
       )}
 
-      {hasAnyDetails && (
-        <p className="text-xs text-gray-500 px-1">
-          💡 Post details to the {channel?.name ?? "event-info"} channel using formats like{" "}
-          <code className="bg-orange-50 px-1 rounded">Date: Aug 3</code>,{" "}
-          <code className="bg-orange-50 px-1 rounded">Time: 3 PM</code>,{" "}
-          <code className="bg-orange-50 px-1 rounded">Location: 123 Main St</code>
-        </p>
+      {/* Owner-only: post / update event details */}
+      {isOwner && user && channel && (
+        <div>
+          {composerOpen ? (
+            <EventDetailsComposer
+              details={details}
+              ownerMessage={ownerMessage}
+              onSave={async (content) => {
+                if (ownerMessage) {
+                  await editMessage(ownerMessage.id, content, user.signer, user.pubkey);
+                } else {
+                  await sendMessage(content, user.signer, user.pubkey);
+                }
+                setComposerOpen(false);
+              }}
+              onCancel={() => setComposerOpen(false)}
+            />
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => setComposerOpen(true)}
+              className="w-full border-orange-300 text-red-700 hover:bg-orange-50 h-11"
+            >
+              <Pencil size={15} className="mr-1.5" />
+              {hasAnyDetails || details.payments.length > 0 ? "Edit event details" : "Add event details"}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
+// ── Owner: event details composer ────────────────────────────────────────────
+
+function EventDetailsComposer({
+  details,
+  ownerMessage,
+  onSave,
+  onCancel,
+}: {
+  details: ParsedEventDetails;
+  ownerMessage: ChatMessage | undefined;
+  onSave: (content: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(details.date ?? "");
+  const [time, setTime] = useState(details.time ?? "");
+  const [location, setLocation] = useState(details.location ?? "");
+  const [cashapp, setCashapp] = useState(details.payments.find((p) => p.method === "cashapp")?.id ?? "");
+  const [cashappAmt, setCashappAmt] = useState(details.payments.find((p) => p.method === "cashapp")?.amount ?? "");
+  const [venmo, setVenmo] = useState(details.payments.find((p) => p.method === "venmo")?.id ?? "");
+  const [venmoAmt, setVenmoAmt] = useState(details.payments.find((p) => p.method === "venmo")?.amount ?? "");
+  const [lightning, setLightning] = useState(details.payments.find((p) => p.method === "lightning")?.id ?? "");
+  const [lightningAmt, setLightningAmt] = useState(details.payments.find((p) => p.method === "lightning")?.amount ?? "");
+  // Extra info = the owner's own unstructured lines from their details post.
+  const [extra, setExtra] = useState(() => {
+    if (!ownerMessage) return "";
+    return ownerMessage.content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !STRUCTURED_LINE.test(l))
+      .join("\n");
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const lines: string[] = [];
+    if (date.trim()) lines.push(`Date: ${date.trim()}`);
+    if (time.trim()) lines.push(`Time: ${time.trim()}`);
+    if (location.trim()) lines.push(`Location: ${location.trim()}`);
+    if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}${cashappAmt.trim() ? ` ${cashappAmt.trim()}` : ""}`);
+    if (venmo.trim()) lines.push(`Venmo: ${venmo.trim()}${venmoAmt.trim() ? ` ${venmoAmt.trim()}` : ""}`);
+    if (lightning.trim()) lines.push(`Lightning: ${lightning.trim()}${lightningAmt.trim() ? ` ${lightningAmt.trim()}` : ""}`);
+    if (extra.trim()) lines.push(extra.trim());
+    if (lines.length === 0) return;
+
+    setSaving(true);
+    try {
+      await onSave(lines.join("\n"));
+    } catch (e) {
+      console.error("Failed to save event details:", e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = "text-base sm:text-sm h-11";
+
+  return (
+    <Card className="border-orange-300">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-red-800 text-base">✏️ Edit Event Details</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">Date</label>
+            <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="Aug 3" className={field} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">Time</label>
+            <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="3 PM" className={field} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">Location</label>
+            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="123 Main St" className={field} />
+          </div>
+        </div>
+
+        <div className="border-t border-orange-100 pt-3">
+          <p className="text-xs font-semibold text-gray-600 mb-2">💸 Payment info (optional — how guests chip in)</p>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input value={cashapp} onChange={(e) => setCashapp(e.target.value)} placeholder="Cash App $cashtag" className={field} />
+              <Input value={cashappAmt} onChange={(e) => setCashappAmt(e.target.value)} placeholder="$25" className={`${field} w-24 flex-shrink-0`} />
+            </div>
+            <div className="flex gap-2">
+              <Input value={venmo} onChange={(e) => setVenmo(e.target.value)} placeholder="Venmo @username" className={field} />
+              <Input value={venmoAmt} onChange={(e) => setVenmoAmt(e.target.value)} placeholder="$25" className={`${field} w-24 flex-shrink-0`} />
+            </div>
+            <div className="flex gap-2">
+              <Input value={lightning} onChange={(e) => setLightning(e.target.value)} placeholder="Lightning address (you@wallet.com)" className={field} />
+              <Input value={lightningAmt} onChange={(e) => setLightningAmt(e.target.value)} placeholder="21000 sats" className={`${field} w-28 flex-shrink-0`} />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">Extra info (optional)</label>
+          <Input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Bring your own chairs!" className={field} />
+        </div>
+
+        <div className="flex gap-2">
+          <Button onClick={handleSave} disabled={saving} className="bg-red-600 hover:bg-red-700 h-11 px-6">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : "Save"}
+          </Button>
+          <Button variant="outline" onClick={onCancel} disabled={saving} className="h-11">
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Sign-Up Board Tab ────────────────────────────────────────────────────────
+
+/** Resolved display name for a claimer. */
+function ClaimedBy({ pubkey }: { pubkey: string }) {
+  const { data: profile } = useAuthor(pubkey);
+  return (
+    <p className="text-xs text-green-600 mt-1">
+      ✓ Claimed by {getDisplayName(profile, pubkey)}
+    </p>
+  );
+}
 
 function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
   const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel);
@@ -456,9 +785,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                     {item.notes && (
                       <p className="text-xs text-gray-500 mt-1">{item.notes}</p>
                     )}
-                    {item.claimedBy && (
-                      <p className="text-xs text-green-600 mt-1">✓ Claimed</p>
-                    )}
+                    {item.claimedBy && <ClaimedBy pubkey={item.claimedBy} />}
                   </div>
                   {item.claimedBy === user?.pubkey ? (
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -700,6 +1027,18 @@ function ChatTab({ channel }: { channel: ChannelV2 | undefined }) {
             Send
           </Button>
         </div>
+
+        {/* Armada CTA — this community lives on the Concord protocol; Armada
+            is the full-featured client for it. */}
+        <a
+          href={`https://armada.buzz/c/${EVENT_CONFIG.communityId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs font-semibold text-orange-900 transition-colors hover:bg-orange-100 active:bg-orange-200"
+        >
+          <img src="/armada-mark.svg" alt="" className="size-4" />
+          Continue the conversation in Armada
+        </a>
       </CardContent>
     </Card>
   );
