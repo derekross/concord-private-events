@@ -13,7 +13,7 @@
  * are purged on activate.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `seafood-boil-shell-${VERSION}`;
 const RUNTIME_CACHE = `seafood-boil-runtime-${VERSION}`;
 

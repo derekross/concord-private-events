@@ -276,7 +276,7 @@ export function icsContent(details: ParsedEventDetails, title: string): string |
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Ross Seafood Boil//EN",
+    "PRODID:-//Concord Private Events//EN",
     "BEGIN:VEVENT",
     `UID:${Date.now()}@seafood-boil`,
     `DTSTAMP:${dt}`,

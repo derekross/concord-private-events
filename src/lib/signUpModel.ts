@@ -4,12 +4,12 @@
  * Items are kind 31800 rumors inside the sign-up channel.
  * The content is JSON carrying the item details.
  */
-import type { SignUpCategory } from "@/lib/eventConfig";
 
 export interface SignUpItem {
   /** The rumor id (d-tag for paramitized replaceable within the channel). */
   id: string;
-  category: SignUpCategory;
+  /** Category key — built-ins (seafood, drinks, …) or any custom name. */
+  category: string;
   name: string;
   /** Pubkey of the claimer, or undefined if unclaimed. */
   claimedBy?: string;
@@ -30,7 +30,7 @@ export function parseSignUpItem(content: string, rumorId: string, author: string
     if (typeof data.name !== "string" || typeof data.category !== "string") return null;
     return {
       id: rumorId,
-      category: data.category as SignUpCategory,
+      category: data.category,
       name: data.name,
       claimedBy: data.claimedBy || undefined,
       claimedAt: data.claimedAt || undefined,
@@ -43,7 +43,7 @@ export function parseSignUpItem(content: string, rumorId: string, author: string
   }
 }
 
-/** Serialize a SignUpItem for publishing. */
+/** Serialize a sign-up item for publishing. */
 export function serializeSignUpItem(item: Omit<SignUpItem, "id" | "createdBy" | "createdAt">): string {
   return JSON.stringify({
     name: item.name,

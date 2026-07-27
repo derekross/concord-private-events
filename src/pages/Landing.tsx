@@ -102,7 +102,7 @@ export default function Landing() {
               onClick={handleInviteSubmit}
               className="w-full bg-red-600 hover:bg-red-700"
             >
-              Join Event 🦐
+              Join Event {EVENT_CONFIG.emoji}
             </Button>
           </div>
         ) : null}

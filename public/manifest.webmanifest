@@ -1,7 +1,7 @@
 {
-  "name": "Ross Seafood Boil",
-  "short_name": "Seafood Boil",
-  "description": "Annual Ross family seafood boil — event details, sign-up board, and group chat.",
+  "name": "Concord Private Events",
+  "short_name": "Private Events",
+  "description": "Private event coordination over the Concord protocol — event details, sign-up boards, and encrypted group chat.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

@@ -1,9 +1,14 @@
 /**
- * Event configuration for the Ross Seafood Boil.
+ * Concord Private Events — deployment configuration.
  *
- * The communityId and relays will be set after Derek creates the community
- * in Armada/Vector. The app reads from this config to know which community
- * to join and display.
+ * This app is a private-event companion for ONE Concord V2 community:
+ * event details, a sign-up board, and encrypted group chat. Point it at
+ * your own community by filling in communityId / communityOwner / relays
+ * below (create the community in Armada, then paste the values here).
+ *
+ * name/emoji/subtitle are only the FALLBACK branding (landing page and
+ * loading states) — once the control plane loads, the community's own
+ * name, icon, banner, and description take over.
  */
 
 export interface EventConfig {
@@ -25,9 +30,9 @@ export interface EventConfig {
 }
 
 export const EVENT_CONFIG: EventConfig = {
-  name: "Ross Seafood Boil",
-  emoji: "🦐",
-  subtitle: "Annual family gathering",
+  name: "Concord Private Events",
+  emoji: "🎉",
+  subtitle: "Plan your gathering, together",
   // Community created in Armada: https://armada.buzz/c/abb8a4b895bc4d023d3aec8d367b5c6acd58ee7593a6716c130e13728d9ed89e
   communityId: "abb8a4b895bc4d023d3aec8d367b5c6acd58ee7593a6716c130e13728d9ed89e",
   // Owner: Derek Ross (npub18ams6ewn5aj2n3wt2qawzglx9mr4nzksxhvrdc4gzrecw7n5tvjqctp424)

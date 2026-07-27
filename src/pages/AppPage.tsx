@@ -6,7 +6,8 @@ import { useCommunityMembership } from "@/hooks/useCommunityMembership";
 import { useCommunityData } from "@/hooks/useCommunityData";
 import { useControlPlane } from "@/hooks/useControlPlane";
 import { useChannels } from "@/hooks/useChannels";
-import { EVENT_CONFIG, CATEGORY_LABELS, SIGN_UP_CATEGORIES, type SignUpCategory } from "@/lib/eventConfig";
+import { EVENT_CONFIG, SIGN_UP_CATEGORIES } from "@/lib/eventConfig";
+import { useCustomCategories, categoryLabel, EMOJI_CHOICES } from "@/lib/customCategories";
 import {
   parseEventDetails,
   googleCalendarUrl,
@@ -22,13 +23,6 @@ import { LoginArea } from "@/components/auth/LoginArea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -101,7 +95,7 @@ export default function AppPage() {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
         <div className="text-center space-y-3">
-          <div className="text-4xl animate-bounce">🦐</div>
+          <div className="text-4xl animate-bounce">{EVENT_CONFIG.emoji}</div>
           <p className="text-sm text-gray-600">Loading community...</p>
         </div>
       </div>
@@ -629,7 +623,7 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
       {!hasAnyDetails && details.payments.length === 0 && (
         <Card className="border-dashed border-orange-300">
           <CardContent className="py-10 px-4 text-center">
-            <div className="text-5xl mb-3">🦐</div>
+            <div className="text-5xl mb-3">{EVENT_CONFIG.emoji}</div>
             {isOwner ? (
               <>
                 <p className="text-base font-medium text-gray-700 mb-1">You're the host — add the details!</p>
@@ -853,8 +847,12 @@ function ClaimedBy({ pubkey }: { pubkey: string }) {
 function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
   const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel);
   const { user } = useCurrentUser();
+  const { customs, addCustomCategory } = useCustomCategories();
   const [newItemName, setNewItemName] = useState("");
-  const [newItemCategory, setNewItemCategory] = useState<SignUpCategory>("seafood");
+  const [newItemCategory, setNewItemCategory] = useState<string>("seafood");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customEmoji, setCustomEmoji] = useState(EMOJI_CHOICES[0]);
 
   const handleAdd = async () => {
     if (!newItemName.trim() || !user) return;
@@ -866,16 +864,40 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
     }
   };
 
+  const handleAddCategory = () => {
+    if (addCustomCategory(customName, customEmoji)) {
+      setNewItemCategory(customName.trim().toLowerCase());
+      setCustomName("");
+      setCustomOpen(false);
+    }
+  };
+
   const handleDelete = (itemId: string) => {
     if (!user || !confirm("Delete this item?")) return;
     deleteItem(itemId, user.signer, user.pubkey).catch((e) => console.error("Delete failed:", e));
   };
 
-  // Group items by category
-  const itemsByCategory = SIGN_UP_CATEGORIES.map((cat) => ({
-    category: cat,
-    items: items.filter((item) => item.category === cat),
-  }));
+  // Category chips: built-ins + the user's custom categories.
+  const chipCategories = useMemo(() => {
+    const keys = [
+      ...SIGN_UP_CATEGORIES,
+      ...customs.map((c) => c.name.toLowerCase()),
+    ];
+    return [...new Set(keys)];
+  }, [customs]);
+
+  // Group items by category — built-ins, customs, and any category that
+  // shows up in the data (e.g. created on another device).
+  const itemsByCategory = useMemo(() => {
+    const keys = [
+      ...chipCategories,
+      ...items.map((i) => i.category),
+    ];
+    return [...new Set(keys)].map((cat) => ({
+      category: cat,
+      items: items.filter((item) => item.category === cat),
+    }));
+  }, [chipCategories, items]);
 
   return (
     <div className="space-y-6">
@@ -889,26 +911,83 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
             <Input
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="e.g., 2 lbs shrimp"
+              placeholder="What should someone bring?"
               className="flex-1 text-base sm:text-sm h-11"
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
-            <Select value={newItemCategory} onValueChange={(v) => setNewItemCategory(v as SignUpCategory)}>
-              <SelectTrigger className="w-36 h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SIGN_UP_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {CATEGORY_LABELS[cat]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button onClick={handleAdd} className="bg-red-600 hover:bg-red-700 h-11 px-5">
               Add
             </Button>
           </div>
+
+          {/* Category picker — emoji chips instead of a dropdown */}
+          <div className="flex flex-wrap gap-1.5">
+            {chipCategories.map((cat) => {
+              const selected = newItemCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setNewItemCategory(cat)}
+                  aria-pressed={selected}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    selected
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "bg-white border border-orange-200 text-gray-700 hover:bg-orange-50 active:bg-orange-100"
+                  }`}
+                >
+                  {categoryLabel(cat, customs)}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setCustomOpen((v) => !v)}
+              aria-expanded={customOpen}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold bg-orange-100 border border-dashed border-orange-300 text-orange-800 hover:bg-orange-200 transition-colors"
+            >
+              ＋ New
+            </button>
+          </div>
+
+          {/* Custom category creator */}
+          {customOpen && (
+            <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3 space-y-2.5">
+              <p className="text-xs font-semibold text-gray-700">Create a category</p>
+              <div className="grid grid-cols-8 gap-1">
+                {EMOJI_CHOICES.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => setCustomEmoji(emoji)}
+                    aria-pressed={customEmoji === emoji}
+                    aria-label={`Choose ${emoji}`}
+                    className={`flex size-9 items-center justify-center rounded-lg text-lg transition-colors ${
+                      customEmoji === emoji
+                        ? "bg-red-600/15 ring-2 ring-red-600"
+                        : "hover:bg-white active:bg-white/70"
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="Category name (e.g. Desserts)"
+                  className="flex-1 text-base sm:text-sm h-10"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleAddCategory}
+                  disabled={!customName.trim()}
+                  className="bg-red-600 hover:bg-red-700 h-10"
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -926,7 +1005,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
       {itemsByCategory.map(({ category, items: catItems }) => (
         <div key={category} className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            {CATEGORY_LABELS[category]}
+            {categoryLabel(category, customs)}
             {catItems.length > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {catItems.length}
