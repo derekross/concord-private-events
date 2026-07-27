@@ -18,17 +18,19 @@ export interface AuthorProfile {
 export function useAuthor(pubkey: string | undefined) {
   const { nostr } = useNostr();
 
-  return useQuery<AuthorProfile | undefined>({
+  // NOTE: never resolve to undefined — TanStack Query throws on undefined
+  // query data. Unknown/missing profiles resolve to a bare { pubkey }.
+  return useQuery<AuthorProfile>({
     queryKey: ["author", pubkey ?? ""],
     queryFn: async ({ signal }) => {
-      if (!pubkey) return undefined;
+      if (!pubkey) return { pubkey: "" };
 
       const [event] = await nostr.query(
         [{ kinds: [0], authors: [pubkey], limit: 1 }],
         { signal }
       );
 
-      if (!event) return undefined;
+      if (!event) return { pubkey };
 
       try {
         const metadata = n.json().pipe(n.metadata()).parse(event.content);

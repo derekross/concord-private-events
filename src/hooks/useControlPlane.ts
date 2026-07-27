@@ -21,13 +21,15 @@ import type { CommunityV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
 
 export interface ControlPlaneResult {
-  folded: FoldedControl | undefined;
+  /** The folded control plane (never undefined — TanStack Query throws on
+   *  undefined query data). */
+  folded: FoldedControl | null;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
 }
 
-export function useControlPlane(community: CommunityV2 | undefined): ControlPlaneResult {
+export function useControlPlane(community: CommunityV2 | null | undefined): ControlPlaneResult {
   const { nostr } = useNostr();
 
   const cidHex = community?.idHex ?? null;
@@ -40,7 +42,7 @@ export function useControlPlane(community: CommunityV2 | undefined): ControlPlan
     staleTime: 15_000,
     refetchInterval: 30_000,
     queryFn: async ({ signal }) => {
-      if (!community) return undefined;
+      if (!community) return null;
 
       const groups = controlGroups(community);
       const authors = groups.map((g) => g.pk);
@@ -72,7 +74,7 @@ export function useControlPlane(community: CommunityV2 | undefined): ControlPlan
   });
 
   return {
-    folded: data,
+    folded: data ?? null,
     isLoading,
     isError,
     error: error as Error | null,

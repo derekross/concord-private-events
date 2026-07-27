@@ -366,71 +366,62 @@ function MapMenu({ location }: { location: string }) {
   );
 }
 
-// ── Sats ⇄ USD Converter ─────────────────────────────────────────────────────
+// ── Event Details Tab ────────────────────────────────────────────────────────
 
-function SatsConverter() {
-  const { data: rate } = useBtcUsdRate();
+/** Matches lines the parser consumes (mirrors eventParser patterns). */
+const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|amount|price|cost|suggested|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
 
-  const [sats, setSats] = useState("");
-  const [usd, setUsd] = useState("");
+/** Geocode a location string and return a static map preview URL (OSM). */
+function useMapPreview(location: string | undefined) {
+  return useQuery<string | null>({
+    queryKey: ["map-preview", location],
+    enabled: Boolean(location),
+    // Addresses barely change; cache aggressively.
+    staleTime: 24 * 60 * 60_000,
+    retry: 1,
+    queryFn: async ({ signal }) => {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location!)}`,
+        { signal, headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) throw new Error(`geocode failed: HTTP ${res.status}`);
+      const [hit] = (await res.json()) as { lat: string; lon: string }[];
+      if (!hit) return null;
+      const lat = Number(hit.lat);
+      const lon = Number(hit.lon);
+      return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=600x256&markers=${lat},${lon},red-pushpin`;
+    },
+  });
+}
 
-  const onSatsChange = (v: string) => {
-    setSats(v);
-    const n = Number(v);
-    if (!rate || !v.trim() || !isFinite(n)) {
-      setUsd("");
-      return;
-    }
-    setUsd(((n / 1e8) * rate).toFixed(2));
-  };
-
-  const onUsdChange = (v: string) => {
-    setUsd(v);
-    const n = Number(v);
-    if (!rate || !v.trim() || !isFinite(n)) {
-      setSats("");
-      return;
-    }
-    setSats(Math.round((n / rate) * 1e8).toString());
-  };
+/** Where card — sky gradient with a live static-map preview. */
+function WhereCard({ location }: { location: string }) {
+  const { data: mapUrl } = useMapPreview(location);
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
-    <div className="rounded-2xl bg-white border border-orange-200 p-4 shadow-sm">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xl">⚡</span>
-        <p className="text-sm font-semibold text-gray-900">Sats ⇄ USD</p>
-        {rate && (
-          <span className="ml-auto text-[11px] text-gray-400">
-            1 BTC = ${rate.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <label className="text-[11px] font-semibold text-gray-500 mb-1 block">Sats</label>
-          <Input
-            value={sats}
-            onChange={(e) => onSatsChange(e.target.value)}
-            placeholder="21000"
-            inputMode="decimal"
-            className="text-base sm:text-sm h-11"
-          />
+    <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-500 text-white p-5 shadow-md">
+      <div className="flex items-center gap-4">
+        <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
+          <MapPin size={28} />
         </div>
-        <span className="text-gray-400 pt-5">⇄</span>
-        <div className="flex-1">
-          <label className="text-[11px] font-semibold text-gray-500 mb-1 block">USD</label>
-          <Input
-            value={usd}
-            onChange={(e) => onUsdChange(e.target.value)}
-            placeholder="25.00"
-            inputMode="decimal"
-            className="text-base sm:text-sm h-11"
-          />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Where</p>
+          <p className="text-2xl font-bold break-words leading-snug">{location}</p>
         </div>
       </div>
-      {!rate && (
-        <p className="text-[11px] text-gray-400 mt-2">Fetching current rate…</p>
+      {mapUrl && !imgFailed && (
+        <img
+          src={mapUrl}
+          alt={`Map of ${location}`}
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+          className="mt-3 h-32 w-full rounded-xl object-cover border border-white/25"
+        />
       )}
+      <div className="mt-4">
+        <MapMenu location={location} />
+      </div>
     </div>
   );
 }
@@ -527,66 +518,6 @@ function ChipInCard({ details }: { details: ParsedEventDetails }) {
   );
 }
 
-/** Where card — sky gradient with a live static-map preview. */
-function WhereCard({ location }: { location: string }) {
-  const { data: mapUrl } = useMapPreview(location);
-  const [imgFailed, setImgFailed] = useState(false);
-
-  return (
-    <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-500 text-white p-5 shadow-md">
-      <div className="flex items-center gap-4">
-        <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
-          <MapPin size={28} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Where</p>
-          <p className="text-2xl font-bold break-words leading-snug">{location}</p>
-        </div>
-      </div>
-      {mapUrl && !imgFailed && (
-        <img
-          src={mapUrl}
-          alt={`Map of ${location}`}
-          loading="lazy"
-          onError={() => setImgFailed(true)}
-          className="mt-3 h-32 w-full rounded-xl object-cover border border-white/25"
-        />
-      )}
-      <div className="mt-4">
-        <MapMenu location={location} />
-      </div>
-    </div>
-  );
-}
-
-// ── Event Details Tab ────────────────────────────────────────────────────────
-
-/** Matches lines the parser consumes (mirrors eventParser patterns). */
-const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|amount|price|cost|suggested|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
-
-/** Geocode a location string and return a static map preview URL (OSM). */
-function useMapPreview(location: string | undefined) {
-  return useQuery<string | null>({
-    queryKey: ["map-preview", location],
-    enabled: Boolean(location),
-    // Addresses barely change; cache aggressively.
-    staleTime: 24 * 60 * 60_000,
-    retry: 1,
-    queryFn: async ({ signal }) => {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location!)}`,
-        { signal, headers: { Accept: "application/json" } }
-      );
-      if (!res.ok) throw new Error(`geocode failed: HTTP ${res.status}`);
-      const [hit] = (await res.json()) as { lat: string; lon: string }[];
-      if (!hit) return null;
-      const lat = Number(hit.lat);
-      const lon = Number(hit.lon);
-      return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=600x256&markers=${lat},${lon},red-pushpin`;
-    },
-  });
-}
-
 function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
   const { messages, isLoading, sendMessage, editMessage } = useChannelChat(channel);
   const { user } = useCurrentUser();
@@ -671,9 +602,6 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
 
       {/* Chip In — payment methods for the host (green gradient) */}
       {details.payments.length > 0 && <ChipInCard details={details} />}
-
-      {/* Sats ⇄ USD converter */}
-      <SatsConverter />
 
       {/* Additional notes/messages that didn't parse as structured data */}
       {details.notes.length > 0 && (

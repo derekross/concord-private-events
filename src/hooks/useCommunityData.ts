@@ -21,7 +21,9 @@ import { EVENT_CONFIG } from "@/lib/eventConfig";
 import type { CommunityV2 } from "@/concord-v2/lib/types";
 
 export interface CommunityDataResult {
-  community: CommunityV2 | undefined;
+  /** The rehydrated community, or null when the user isn't a member (never
+   *  undefined — TanStack Query throws on undefined query data). */
+  community: CommunityV2 | null;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -41,7 +43,7 @@ export function useCommunityData(): CommunityDataResult {
     enabled: Boolean(pubkey && EVENT_CONFIG.communityId),
     staleTime: 30_000,
     queryFn: async ({ signal }) => {
-      if (!pubkey || !EVENT_CONFIG.communityId) return undefined;
+      if (!pubkey || !EVENT_CONFIG.communityId) return null;
 
       // Fetch the user's kind-13302 Community List
       const events = await nostr.query(
@@ -64,10 +66,10 @@ export function useCommunityData(): CommunityDataResult {
           } as CommunityList;
         } catch (err) {
           console.warn("[useCommunityData] Failed to decrypt Community List:", err);
-          return undefined;
+          return null;
         }
       } else if (latest?.content && !signer?.nip44) {
-        return undefined;
+        return null;
       }
 
       // Find the entry matching our configured community
@@ -75,11 +77,11 @@ export function useCommunityData(): CommunityDataResult {
       if (!isLive(list, communityId)) {
         // Not in the list — could be the owner (who might not have a list entry yet)
         // or genuinely not a member.
-        return undefined;
+        return null;
       }
 
       const entry = list.entries.find((e) => e.community_id === communityId);
-      if (!entry) return undefined;
+      if (!entry) return null;
 
       // Rehydrate the runtime community object with encryption keys
       const community = rehydrateCommunity(entry, EVENT_CONFIG.relays);
@@ -88,7 +90,7 @@ export function useCommunityData(): CommunityDataResult {
   });
 
   return {
-    community: data,
+    community: data ?? null,
     isLoading,
     isError,
     error: error as Error | null,

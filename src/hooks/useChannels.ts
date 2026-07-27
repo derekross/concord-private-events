@@ -26,8 +26,8 @@ export interface ChannelsResult {
 }
 
 export function useChannels(
-  community: CommunityV2 | undefined,
-  folded: FoldedControl | undefined,
+  community: CommunityV2 | null | undefined,
+  folded: FoldedControl | null | undefined,
 ): ChannelsResult {
   return useMemo(() => {
     if (!community) {
@@ -41,7 +41,7 @@ export function useChannels(
       };
     }
 
-    const channels = channelsViewLib(community, folded);
+    const channels = channelsViewLib(community, folded ?? undefined);
     const channelsByName = new Map<string, ChannelV2>();
     for (const ch of channels) {
       channelsByName.set(ch.name, ch);
