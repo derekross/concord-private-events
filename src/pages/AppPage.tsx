@@ -996,9 +996,9 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
   return (
     <div className="space-y-6">
       {/* Add new item */}
-      <Card className="border-orange-200 py-4 gap-3">
+      <Card className="border-transparent py-4 gap-3 bg-gradient-to-br from-red-600 to-orange-500 text-white shadow-md">
         <CardHeader>
-          <CardTitle className="text-red-800 text-base">➕ Add Item</CardTitle>
+          <CardTitle className="text-white text-base">➕ Add Item</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
@@ -1006,10 +1006,10 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
               placeholder="What should someone bring?"
-              className="flex-1 text-base sm:text-sm h-11"
+              className="flex-1 text-base sm:text-sm h-11 bg-white/95 border-transparent text-gray-900 placeholder:text-gray-400"
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
-            <Button onClick={handleAdd} className="bg-red-600 hover:bg-red-700 h-11 px-5">
+            <Button onClick={handleAdd} className="bg-white text-red-700 hover:bg-white/90 font-bold h-11 px-5 shadow-sm">
               Add
             </Button>
           </div>
@@ -1025,8 +1025,8 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                   aria-pressed={selected}
                   className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                     selected
-                      ? "bg-red-600 text-white shadow-sm"
-                      : "bg-white border border-orange-200 text-gray-700 hover:bg-orange-50 active:bg-orange-100"
+                      ? "bg-white text-red-700 shadow-sm"
+                      : "bg-white/15 border border-white/25 text-white hover:bg-white/25 active:bg-white/30"
                   }`}
                 >
                   {categoryLabel(cat, customs)}
@@ -1036,7 +1036,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
             <button
               onClick={() => setCustomOpen((v) => !v)}
               aria-expanded={customOpen}
-              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold bg-orange-100 border border-dashed border-orange-300 text-orange-800 hover:bg-orange-200 transition-colors"
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold bg-white/10 border border-dashed border-white/40 text-white hover:bg-white/20 transition-colors"
             >
               ＋ New
             </button>
@@ -1044,8 +1044,8 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 
           {/* Custom category creator */}
           {customOpen && (
-            <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3 space-y-2.5">
-              <p className="text-xs font-semibold text-gray-700">Create a category</p>
+            <div className="rounded-xl border border-white/25 bg-black/15 p-3 space-y-2.5">
+              <p className="text-xs font-semibold text-white/90">Create a category</p>
               <div className="grid grid-cols-8 gap-1">
                 {EMOJI_CHOICES.map((emoji) => (
                   <button
@@ -1055,8 +1055,8 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                     aria-label={`Choose ${emoji}`}
                     className={`flex size-9 items-center justify-center rounded-lg text-lg transition-colors ${
                       customEmoji === emoji
-                        ? "bg-red-600/15 ring-2 ring-red-600"
-                        : "hover:bg-white active:bg-white/70"
+                        ? "bg-white/25 ring-2 ring-white"
+                        : "hover:bg-white/15 active:bg-white/20"
                     }`}
                   >
                     {emoji}
@@ -1068,14 +1068,14 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder="Category name (e.g. Desserts)"
-                  className="flex-1 text-base sm:text-sm h-10"
+                  className="flex-1 text-base sm:text-sm h-10 bg-white/95 border-transparent text-gray-900 placeholder:text-gray-400"
                   onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
                 />
                 <Button
                   size="sm"
                   onClick={handleAddCategory}
                   disabled={!customName.trim()}
-                  className="bg-red-600 hover:bg-red-700 h-10"
+                  className="bg-white text-red-700 hover:bg-white/90 font-bold h-10 shadow-sm"
                 >
                   Add
                 </Button>
