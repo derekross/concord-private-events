@@ -14,7 +14,7 @@
 import { useNostr } from "@nostrify/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
-import { KIND_DELETE, KIND_EDIT, KIND_MESSAGE, KIND_WRAP } from "@/concord-v2/lib/kinds";
+import { KIND_DELETE, KIND_EDIT, KIND_MESSAGE, KIND_REACTION, KIND_WRAP } from "@/concord-v2/lib/kinds";
 import type { ChannelV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
 import { openChannelWraps } from "@/lib/concordHelpers";
@@ -92,9 +92,9 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
                 }
                 return [...old, confirmed].sort((a, b) => a.createdAt - b.createdAt);
               });
-            } else if (ev.kind === KIND_DELETE || ev.kind === KIND_EDIT) {
-              // Refold both views of the channel — edits and deletes can
-              // target chat messages or sign-up items alike.
+            } else if (ev.kind === KIND_DELETE || ev.kind === KIND_EDIT || ev.kind === KIND_REACTION) {
+              // Refold both views of the channel — edits, deletes, and
+              // reactions can target chat messages or sign-up items alike.
               queryClient.invalidateQueries({ queryKey: chatKey });
               queryClient.invalidateQueries({ queryKey: boardKey });
             } else if (ev.kind === KIND_SIGNUP_ITEM) {

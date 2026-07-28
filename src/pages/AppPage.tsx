@@ -7,7 +7,7 @@ import { useCommunityData } from "@/hooks/useCommunityData";
 import { useControlPlane } from "@/hooks/useControlPlane";
 import { useChannels } from "@/hooks/useChannels";
 import { EVENT_CONFIG, SIGN_UP_CATEGORIES } from "@/lib/eventConfig";
-import { useCustomCategories, categoryLabel, EMOJI_CHOICES } from "@/lib/customCategories";
+import { useCustomCategories, categoryLabel, categoryEmoji, EMOJI_CHOICES } from "@/lib/customCategories";
 import {
   parseEventDetails,
   googleCalendarUrl,
@@ -34,7 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSignUpBoard } from "@/hooks/useSignUpBoard";
 import { useChannelChat, type ChatMessage } from "@/hooks/useChannelChat";
@@ -928,6 +927,41 @@ function EventDetailsComposer({
 
 // ── Sign-Up Board Tab ────────────────────────────────────────────────────────
 
+/** Per-category gradient identities — echoes the details cards' color coding. */
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  seafood: "from-rose-500 to-orange-400",
+  drinks: "from-sky-500 to-cyan-400",
+  sides: "from-emerald-500 to-green-400",
+  supplies: "from-amber-500 to-orange-400",
+  volunteer: "from-violet-500 to-purple-400",
+};
+
+/** Palette for custom categories (deterministic by name). */
+const CUSTOM_GRADIENTS = [
+  "from-pink-500 to-rose-400",
+  "from-indigo-500 to-blue-400",
+  "from-teal-500 to-emerald-400",
+  "from-fuchsia-500 to-purple-400",
+  "from-cyan-600 to-sky-400",
+  "from-amber-600 to-yellow-400",
+];
+
+function categoryGradient(category: string): string {
+  const builtIn = CATEGORY_GRADIENTS[category];
+  if (builtIn) return builtIn;
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = ((hash << 5) - hash + category.charCodeAt(i)) | 0;
+  }
+  return CUSTOM_GRADIENTS[Math.abs(hash) % CUSTOM_GRADIENTS.length];
+}
+
+/** Display name for a category key (built-in capitalized, or custom name). */
+function categoryName(category: string, customs: { name: string; emoji: string }[]): string {
+  const custom = customs.find((c) => c.name.toLowerCase() === category.toLowerCase());
+  return custom?.name ?? category.charAt(0).toUpperCase() + category.slice(1);
+}
+
 /** Resolved display name for a claimer. */
 function ClaimedBy({ pubkey }: { pubkey: string }) {
   const { data: profile } = useAuthor(pubkey);
@@ -1095,32 +1129,36 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
         </div>
       )}
 
-      {/* Items by category */}
-      {itemsByCategory.map(({ category, items: catItems }) => (
-        <div key={category} className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            {categoryLabel(category, customs)}
-            {catItems.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
+      {/* Items by category — color-coded cards like the details page.
+          Empty categories stay hidden so the board never looks unfinished. */}
+      {itemsByCategory
+        .filter(({ items: catItems }) => catItems.length > 0)
+        .map(({ category, items: catItems }) => (
+          <div key={category} className="rounded-2xl overflow-hidden bg-white shadow-md">
+            {/* Color-coded category header */}
+            <div className={`flex items-center gap-2.5 bg-gradient-to-r ${categoryGradient(category)} px-4 py-2.5 text-white`}>
+              <span className="flex size-8 items-center justify-center rounded-lg bg-white/20 text-lg">
+                {categoryEmoji(category, customs)}
+              </span>
+              <h3 className="text-sm font-bold tracking-wide">{categoryName(category, customs)}</h3>
+              <span className="ml-auto rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold">
                 {catItems.length}
-              </Badge>
-            )}
-          </h3>
-          {catItems.length === 0 ? (
-            <p className="text-xs text-gray-400 pl-6">No items yet</p>
-          ) : (
-            <div className="space-y-2">
+              </span>
+            </div>
+
+            {/* Items */}
+            <div className="p-2 space-y-1">
               {catItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between gap-2 p-3 bg-white/70 rounded-lg border border-orange-100"
+                  className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 hover:bg-orange-50/70 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium break-words ${item.claimedBy ? "line-through text-gray-400" : "text-gray-900"}`}>
                       {item.name}
                     </p>
                     {item.notes && (
-                      <p className="text-xs text-gray-500 mt-1">{item.notes}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{item.notes}</p>
                     )}
                     {item.claimedBy && <ClaimedBy pubkey={item.claimedBy} />}
                   </div>
@@ -1129,7 +1167,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="min-h-9"
+                        className="rounded-full min-h-9"
                         onClick={() => user && unclaimItem(item.id, user.signer, user.pubkey).catch((e) => console.error("Unclaim failed:", e))}
                       >
                         Unclaim
@@ -1150,7 +1188,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <Button
                         size="sm"
-                        className="bg-green-600 hover:bg-green-700 min-h-9"
+                        className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm min-h-9 px-4"
                         onClick={() => user && claimItem(item.id, user.signer, user.pubkey).catch((e) => console.error("Claim failed:", e))}
                       >
                         Claim
@@ -1181,17 +1219,18 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      ))}
+          </div>
+        ))}
 
       {!isLoading && items.length === 0 && (
-        <div className="text-center py-8">
-          <div className="text-4xl mb-2">📝</div>
-          <p className="text-sm text-gray-500">
-            No items yet. Add the first one above!
-          </p>
-        </div>
+        <Card className="border-dashed border-orange-300">
+          <CardContent className="py-10 px-4 text-center">
+            <div className="text-4xl mb-2">📝</div>
+            <p className="text-sm text-gray-500">
+              No items yet. Add the first one above!
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
@@ -1199,12 +1238,25 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 
 // ── Chat Tab ─────────────────────────────────────────────────────────────────
 
+/** Quick-reaction choices in the long-press action menu. */
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🦐"];
+
+/** Resolved name for the reply banner. */
+function ReplyBannerName({ pubkey }: { pubkey: string }) {
+  const { data: profile } = useAuthor(pubkey);
+  return <>{getDisplayName(profile, pubkey)}</>;
+}
+
 function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: boolean }) {
-  const { messages, isLoading, sendMessage, deleteMessage } = useChannelChat(channel);
   const { user } = useCurrentUser();
+  const { messages, isLoading, sendMessage, deleteMessage, sendReaction, removeReaction } =
+    useChannelChat(channel, user?.pubkey);
   const uploadFile = useUploadFile();
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<{ url: string; tags: string[][] }[]>([]);
+  // Long-press action menu + quote-reply composer state.
+  const [actionMenu, setActionMenu] = useState<{ msg: ChatMessage; left: number; top: number } | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wasActive = useRef(false);
@@ -1243,11 +1295,32 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
             return imeta;
           })
         : undefined;
-      await sendMessage(input, user.signer, user.pubkey, attachmentTags);
+      await sendMessage(input, user.signer, user.pubkey, attachmentTags, replyTo ?? undefined);
       setInput("");
       setPendingImages([]);
+      setReplyTo(null);
     } catch (e) {
       console.error("Failed to send message:", e);
+    }
+  };
+
+  /** Long-press on a message → floating action menu at the press point. */
+  const openActionMenu = (msg: ChatMessage, x: number, y: number) => {
+    const MENU_W = 264;
+    const MENU_H = 190;
+    const left = Math.max(8, Math.min(x - 24, window.innerWidth - MENU_W - 8));
+    const top = Math.max(8, Math.min(y - MENU_H, window.innerHeight - MENU_H - 8));
+    setActionMenu({ msg, left, top });
+  };
+
+  /** Toggle the viewer's reaction on a message. */
+  const handleReactionTap = (msg: ChatMessage, emoji: string) => {
+    if (!user) return;
+    const mine = msg.reactions?.find((r) => r.emoji === emoji && r.myRumorId);
+    if (mine?.myRumorId) {
+      removeReaction(mine.myRumorId, user.signer, user.pubkey).catch((e) => console.error("Unreact failed:", e));
+    } else {
+      sendReaction(msg, emoji, user.signer, user.pubkey).catch((e) => console.error("React failed:", e));
     }
   };
 
@@ -1331,9 +1404,8 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
                   key={msg.id}
                   msg={msg}
                   isMine={msg.pubkey === user?.pubkey}
-                  onDelete={user ? (id) => {
-                    deleteMessage(id, user.signer, user.pubkey).catch((e) => console.error("Delete failed:", e));
-                  } : undefined}
+                  onAction={user ? openActionMenu : undefined}
+                  onReactionTap={user ? handleReactionTap : undefined}
                 />
               ))}
             </div>
@@ -1362,6 +1434,25 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
           <div className="flex items-center gap-2 text-xs text-gray-500 flex-shrink-0">
             <Loader2 size={14} className="animate-spin" />
             Uploading image...
+          </div>
+        )}
+
+        {/* Reply banner (quote-reply composer state) */}
+        {replyTo && (
+          <div className="flex flex-shrink-0 items-center gap-2 rounded-lg border-l-4 border-red-400 bg-orange-50 px-3 py-1.5">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-red-700">
+                Replying to <ReplyBannerName pubkey={replyTo.pubkey} />
+              </p>
+              <p className="text-xs text-gray-600 truncate">{replyTo.content}</p>
+            </div>
+            <button
+              onClick={() => setReplyTo(null)}
+              className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0"
+              title="Cancel reply"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
 
@@ -1396,6 +1487,62 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
           </Button>
         </div>
       </CardContent>
+
+      {/* Long-press action menu (react / reply / delete) */}
+      {actionMenu && user && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setActionMenu(null)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div
+            className="absolute w-64 rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl"
+            style={{ left: actionMenu.left, top: actionMenu.top }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Quick reactions */}
+            <div className="flex justify-between px-1 pb-1.5">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    handleReactionTap(actionMenu.msg, emoji);
+                    setActionMenu(null);
+                  }}
+                  className="flex size-10 items-center justify-center rounded-full text-xl transition-all hover:bg-orange-100 active:scale-125"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-orange-100" />
+            {/* Reply */}
+            <button
+              onClick={() => {
+                setReplyTo(actionMenu.msg);
+                setActionMenu(null);
+              }}
+              className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-800 hover:bg-orange-50 active:bg-orange-100"
+            >
+              <span>↩️</span> Reply
+            </button>
+            {/* Delete (own messages only) */}
+            {actionMenu.msg.pubkey === user.pubkey && (
+              <button
+                onClick={() => {
+                  deleteMessage(actionMenu.msg.id, user.signer, user.pubkey).catch((e) =>
+                    console.error("Delete failed:", e)
+                  );
+                  setActionMenu(null);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 active:bg-red-100"
+              >
+                <Trash2 size={15} /> Delete
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
