@@ -605,8 +605,8 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
 
       {/* Additional notes/messages that didn't parse as structured data */}
       {details.notes.length > 0 && (
-        <Card className="border-orange-200">
-          <CardHeader className="pb-2">
+        <Card className="border-orange-200 py-4 gap-2">
+          <CardHeader>
             <CardTitle className="text-red-800 text-base">📢 Additional Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -709,8 +709,8 @@ function EventDetailsComposer({
   const field = "text-base sm:text-sm h-11";
 
   return (
-    <Card className="border-orange-300">
-      <CardHeader className="pb-3">
+    <Card className="border-orange-300 py-4 gap-3">
+      <CardHeader>
         <CardTitle className="text-red-800 text-base">✏️ Edit Event Details</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -830,8 +830,8 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
   return (
     <div className="space-y-6">
       {/* Add new item */}
-      <Card className="border-orange-200">
-        <CardHeader className="pb-3">
+      <Card className="border-orange-200 py-4 gap-3">
+        <CardHeader>
           <CardTitle className="text-red-800 text-base">➕ Add Item</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -1108,7 +1108,7 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
 
   return (
     <Card
-      className={`border-orange-200 flex flex-col ${
+      className={`border-orange-200 flex flex-col py-3 gap-2 ${
         active
           ? // Mobile: pinned between the hero and the bottom nav — the card
             // IS the page here, so there's exactly one scroll region (the
@@ -1118,7 +1118,7 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
           : ""
       } h-[65dvh] max-sm:h-auto`}
     >
-      <CardHeader className="flex-shrink-0 pb-2 pt-4">
+      <CardHeader className="flex-shrink-0">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-red-800 text-base">💬 Group Chat</CardTitle>
           {/* Armada CTA — this community lives on the Concord protocol;
@@ -1134,7 +1134,7 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
           </a>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-2 overflow-hidden px-3 pb-3">
+      <CardContent className="flex-1 flex flex-col gap-2 overflow-hidden px-3">
         {/* Messages — native scroll for reliability */}
         <div
           ref={scrollRef}
