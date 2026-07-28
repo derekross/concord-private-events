@@ -1239,7 +1239,7 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 // ── Chat Tab ─────────────────────────────────────────────────────────────────
 
 /** Quick-reaction choices in the long-press action menu. */
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🦐"];
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🎊"];
 
 /** Resolved name for the reply banner. */
 function ReplyBannerName({ pubkey }: { pubkey: string }) {
