@@ -131,9 +131,9 @@ export default function AppPage() {
       </div>
 
       {/* Main Content — full bleed; top padding clears the fixed block
-          (56px header + 144/176px hero + 8px gap), bottom padding clears
+          (56px header + 144/176px hero + 16px gap), bottom padding clears
           the mobile nav bar. */}
-      <main className="px-2 pb-28 sm:pb-6 pt-[calc(208px+env(safe-area-inset-top))] sm:pt-[calc(240px+env(safe-area-inset-top))]">
+      <main className="px-2 pb-28 sm:pb-6 pt-[calc(216px+env(safe-area-inset-top))] sm:pt-[calc(248px+env(safe-area-inset-top))]">
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           {/* Desktop tabs (mobile gets the bottom nav bar) */}
           <TabsList className="grid w-full grid-cols-3 mb-4 max-sm:hidden">
@@ -1116,9 +1116,9 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
       className={`border-orange-200 flex flex-col py-3 gap-2 ${
         active
           ? // Mobile: pinned between the fixed top block (56px header +
-            // 144px hero + 8px gap) and the bottom nav (68px) — exactly one
+            // 144px hero + 16px gap) and the bottom nav (68px) — exactly one
             // scroll region (the message list).
-            "max-sm:fixed max-sm:inset-x-2 max-sm:z-10 max-sm:top-[calc(208px+env(safe-area-inset-top))] max-sm:bottom-[calc(68px+env(safe-area-inset-bottom))]"
+            "max-sm:fixed max-sm:inset-x-2 max-sm:z-10 max-sm:top-[calc(216px+env(safe-area-inset-top))] max-sm:bottom-[calc(68px+env(safe-area-inset-bottom))]"
           : ""
       } h-[65dvh] max-sm:h-auto`}
     >
