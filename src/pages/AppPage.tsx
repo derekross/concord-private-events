@@ -123,13 +123,18 @@ export default function AppPage() {
 
   return (
     <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
-      <AppHeader name={communityName} metadata={folded?.metadata} />
-
-      {/* Main Content — full bleed; bottom padding clears the mobile nav bar */}
-      <main className="px-2 pt-2 pb-28 sm:pb-6">
+      {/* Fixed top block: app header + community banner. The tab content
+          scrolls underneath it (offsets below match these heights). */}
+      <div className="fixed inset-x-0 top-0 z-30">
+        <AppHeader name={communityName} metadata={folded?.metadata} />
         <CommunityHero metadata={folded?.metadata} />
+      </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="mt-3">
+      {/* Main Content — full bleed; top padding clears the fixed block
+          (56px header + 144/176px hero + 8px gap), bottom padding clears
+          the mobile nav bar. */}
+      <main className="px-2 pb-28 sm:pb-6 pt-[calc(208px+env(safe-area-inset-top))] sm:pt-[calc(240px+env(safe-area-inset-top))]">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           {/* Desktop tabs (mobile gets the bottom nav bar) */}
           <TabsList className="grid w-full grid-cols-3 mb-4 max-sm:hidden">
             {TAB_ITEMS.map((item) => (
@@ -166,7 +171,7 @@ function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetad
   const icon = useDecryptedImage(metadata?.icon);
 
   return (
-    <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-orange-200 px-3 pt-[env(safe-area-inset-top)]">
+    <header className="bg-white/80 backdrop-blur-sm border-b border-orange-200 px-3 pt-[env(safe-area-inset-top)]">
       <div className="flex items-center justify-between py-3">
         <div className="flex items-center gap-2 min-w-0">
           {icon ? (
@@ -229,7 +234,7 @@ function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
   const isLong = (description?.length ?? 0) > 140;
 
   return (
-    <div className="-mx-2 bg-gray-900">
+    <div className="bg-gray-900 shadow-md">
       <div className="relative h-36 sm:h-44">
         {banner ? (
           <img src={banner} alt="" className="absolute inset-0 size-full object-cover" />
@@ -1110,11 +1115,10 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
     <Card
       className={`border-orange-200 flex flex-col py-3 gap-2 ${
         active
-          ? // Mobile: pinned between the hero and the bottom nav — the card
-            // IS the page here, so there's exactly one scroll region (the
-            // message list). Offsets: header 56 + hero 144 + margins 20 top,
-            // nav 68 bottom.
-            "max-sm:fixed max-sm:inset-x-2 max-sm:z-10 max-sm:top-[calc(220px+env(safe-area-inset-top))] max-sm:bottom-[calc(68px+env(safe-area-inset-bottom))]"
+          ? // Mobile: pinned between the fixed top block (56px header +
+            // 144px hero + 8px gap) and the bottom nav (68px) — exactly one
+            // scroll region (the message list).
+            "max-sm:fixed max-sm:inset-x-2 max-sm:z-10 max-sm:top-[calc(208px+env(safe-area-inset-top))] max-sm:bottom-[calc(68px+env(safe-area-inset-bottom))]"
           : ""
       } h-[65dvh] max-sm:h-auto`}
     >
