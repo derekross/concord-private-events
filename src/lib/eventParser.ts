@@ -255,6 +255,55 @@ export function appleMapsUrl(location: string): string {
 }
 
 /**
+ * Friendly display strings ⇄ native-picker ISO values.
+ *
+ * The channel carries friendly strings ("Aug 3, 2026" / "2:30 PM") which
+ * render nicely and parse reliably with `new Date()`; the composer's native
+ * date/time pickers work in ISO ("2026-08-03" / "14:30"). These convert
+ * between the two.
+ */
+
+/** "Aug 3, 2026" → "2026-08-03" (for <input type="date">). Unparseable → "". */
+export function friendlyDateToIso(s: string | undefined): string {
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** "2026-08-03" → "Aug 3, 2026". Noon anchor avoids timezone day-shift. */
+export function isoToFriendlyDate(iso: string): string {
+  const d = new Date(`${iso}T12:00:00`);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** "2:30 PM" → "14:30" (for <input type="time">). Unparseable → "". */
+export function friendlyTimeToIso(s: string | undefined): string {
+  if (!s) return "";
+  const m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (!m) return "";
+  let h = Number(m[1]);
+  const mins = m[2] ?? "00";
+  const pm = m[3].toLowerCase() === "pm";
+  if (pm && h !== 12) h += 12;
+  if (!pm && h === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${mins}`;
+}
+
+/** "14:30" → "2:30 PM". */
+export function isoToFriendlyTime(iso: string): string {
+  const m = iso.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return iso;
+  let h = Number(m[1]);
+  const suffix = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${m[2]} ${suffix}`;
+}
+
+/**
  * Raw .ics file content for the event (Apple Calendar / Outlook / any
  * calendar app). Serve as a blob download — data: URLs are unreliable in
  * iOS Safari.

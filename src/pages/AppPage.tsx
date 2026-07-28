@@ -15,11 +15,16 @@ import {
   appleMapsUrl,
   icsContent,
   numericAmount,
+  friendlyDateToIso,
+  isoToFriendlyDate,
+  friendlyTimeToIso,
+  isoToFriendlyTime,
   type ParsedEventDetails,
 } from "@/lib/eventParser";
 import { isAppleDevice } from "@/lib/device";
 import { resolveLightningInvoiceUri, useBtcUsdRate } from "@/lib/lightning";
 import { LoginArea } from "@/components/auth/LoginArea";
+import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -376,7 +381,99 @@ function MapMenu({ location }: { location: string }) {
 /** Matches lines the parser consumes (mirrors eventParser patterns). */
 const STRUCTURED_LINE = /^\s*(?:date|when|event|time|location|where|address|venue|place|at|amount|price|cost|suggested|cash\s?app|cashtag|venmo|lightning|lud16|ln|zap|📅|🕐|⏰|🕒|📍|🗺️|🏠)\s*[:-]/i;
 
-/** Geocode a location string and return a static map preview URL (OSM). */
+// ── Map preview (client-composed from OSM tiles — no API key, no static-map
+// service dependency) ─────────────────────────────────────────────────────────
+
+const MAP_W = 600;
+const MAP_H = 256;
+const MAP_ZOOM = 15;
+const TILE = 256;
+
+/** Slippy-map tile coords (fractional) for a lon/lat at a zoom level. */
+function lonLatToTile(lon: number, lat: number, zoom: number) {
+  const n = 2 ** zoom;
+  const xt = ((lon + 180) / 360) * n;
+  const latRad = (lat * Math.PI) / 180;
+  const yt = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+  return { xt, yt };
+}
+
+function loadTile(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous"; // OSM tiles send ACAO:* — canvas stays clean
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("tile load failed"));
+    img.src = src;
+  });
+}
+
+/** Draw a red teardrop pin with a soft shadow at (cx, cy = pin tip). */
+function drawPin(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  ctx.fillStyle = "#dc2626";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.quadraticCurveTo(cx - 14, cy - 22, cx - 14, cy - 30);
+  ctx.arc(cx, cy - 30, 14, Math.PI, 0);
+  ctx.quadraticCurveTo(cx + 14, cy - 22, cx, cy);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy - 30, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Compose a 600×256 map image centered on (lat, lon) from OSM tiles, with a
+ * pin. Returns a data URL. Throws when tiles can't be loaded (offline etc.).
+ */
+async function composeMapImage(lat: number, lon: number): Promise<string> {
+  const { xt, yt } = lonLatToTile(lon, lat, MAP_ZOOM);
+  const centerPx = { x: xt * TILE, y: yt * TILE };
+  const startX = Math.floor(centerPx.x - MAP_W / 2);
+  const startY = Math.floor(centerPx.y - MAP_H / 2);
+  const x0 = Math.floor(startX / TILE);
+  const y0 = Math.floor(startY / TILE);
+  const x1 = Math.floor((startX + MAP_W) / TILE);
+  const y1 = Math.floor((startY + MAP_H) / TILE);
+  const n = 2 ** MAP_ZOOM;
+
+  const jobs: Promise<{ img: HTMLImageElement; px: number; py: number }>[] = [];
+  for (let tx = x0; tx <= x1; tx++) {
+    for (let ty = y0; ty <= y1; ty++) {
+      if (ty < 0 || ty >= n) continue; // no vertical wrap
+      const wrapped = ((tx % n) + n) % n; // horizontal wrap
+      jobs.push(
+        loadTile(`https://tile.openstreetmap.org/${MAP_ZOOM}/${wrapped}/${ty}.png`).then((img) => ({
+          img,
+          px: tx * TILE - startX,
+          py: ty * TILE - startY,
+        }))
+      );
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = MAP_W;
+  canvas.height = MAP_H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no 2d context");
+
+  for (const { img, px, py } of await Promise.all(jobs)) {
+    ctx.drawImage(img, px, py);
+  }
+  drawPin(ctx, MAP_W / 2, MAP_H / 2 + 22);
+
+  return canvas.toDataURL("image/png");
+}
+
+/** Geocode a location string and compose a static map preview image. */
 function useMapPreview(location: string | undefined) {
   return useQuery<string | null>({
     queryKey: ["map-preview", location],
@@ -392,9 +489,7 @@ function useMapPreview(location: string | undefined) {
       if (!res.ok) throw new Error(`geocode failed: HTTP ${res.status}`);
       const [hit] = (await res.json()) as { lat: string; lon: string }[];
       if (!hit) return null;
-      const lat = Number(hit.lat);
-      const lon = Number(hit.lon);
-      return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=600x256&markers=${lat},${lon},red-pushpin`;
+      return composeMapImage(Number(hit.lat), Number(hit.lon));
     },
   });
 }
@@ -405,8 +500,24 @@ function WhereCard({ location }: { location: string }) {
   const [imgFailed, setImgFailed] = useState(false);
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-500 text-white p-5 shadow-md">
-      <div className="flex items-center gap-4">
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-500 text-white p-5 shadow-md">
+      {/* Faint background: the real map when we have one, map motif otherwise */}
+      {mapUrl && !imgFailed ? (
+        <img
+          src={mapUrl}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 size-full object-cover opacity-20 blur-[2px] pointer-events-none select-none"
+        />
+      ) : (
+        <img
+          src="/patterns/map.png"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 size-full object-cover opacity-15 pointer-events-none select-none"
+        />
+      )}
+      <div className="relative flex items-center gap-4">
         <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
           <MapPin size={28} />
         </div>
@@ -421,10 +532,10 @@ function WhereCard({ location }: { location: string }) {
           alt={`Map of ${location}`}
           loading="lazy"
           onError={() => setImgFailed(true)}
-          className="mt-3 h-32 w-full rounded-xl object-cover border border-white/25"
+          className="relative mt-3 h-32 w-full rounded-xl object-cover border border-white/25"
         />
       )}
-      <div className="mt-4">
+      <div className="relative mt-4">
         <MapMenu location={location} />
       </div>
     </div>
@@ -459,8 +570,14 @@ function ChipInCard({ details }: { details: ParsedEventDetails }) {
   };
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-green-600 to-emerald-500 text-white p-5 shadow-md">
-      <div className="flex items-center gap-4">
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-600 to-emerald-500 text-white p-5 shadow-md">
+      <img
+        src="/patterns/money.png"
+        alt=""
+        aria-hidden
+        className="absolute inset-0 size-full object-cover opacity-15 pointer-events-none select-none"
+      />
+      <div className="relative flex items-center gap-4">
         <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0 text-3xl">
           💸
         </div>
@@ -479,7 +596,7 @@ function ChipInCard({ details }: { details: ParsedEventDetails }) {
           )}
         </div>
       </div>
-      <div className="mt-4 space-y-2">
+      <div className="relative mt-4 space-y-2">
         {details.payments.map((p) => {
           const rowInner = (
             <>
@@ -578,10 +695,16 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
         </Card>
       )}
 
-      {/* When — big gradient card */}
+      {/* When — big gradient card with a faint calendar motif */}
       {(details.date || details.time) && (
-        <div className="rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white p-5 shadow-md">
-          <div className="flex items-center gap-4">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white p-5 shadow-md">
+          <img
+            src="/patterns/calendar.png"
+            alt=""
+            aria-hidden
+            className="absolute inset-0 size-full object-cover opacity-15 pointer-events-none select-none"
+          />
+          <div className="relative flex items-center gap-4">
             <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
               <CalendarDays size={30} />
             </div>
@@ -598,7 +721,7 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
               )}
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="relative mt-4 flex flex-wrap gap-2">
             <CalendarMenu details={details} />
           </div>
         </div>
@@ -672,8 +795,10 @@ function EventDetailsComposer({
   onSave: (content: string) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [date, setDate] = useState(details.date ?? "");
-  const [time, setTime] = useState(details.time ?? "");
+  // Date/time state lives in ISO (native pickers); converted to friendly
+  // display strings on save.
+  const [date, setDate] = useState(() => friendlyDateToIso(details.date));
+  const [time, setTime] = useState(() => friendlyTimeToIso(details.time));
   const [location, setLocation] = useState(details.location ?? "");
   // ONE suggested amount, however many payment methods are offered — or
   // open donations, where guests choose what to give.
@@ -695,8 +820,8 @@ function EventDetailsComposer({
 
   const handleSave = async () => {
     const lines: string[] = [];
-    if (date.trim()) lines.push(`Date: ${date.trim()}`);
-    if (time.trim()) lines.push(`Time: ${time.trim()}`);
+    if (date) lines.push(`Date: ${isoToFriendlyDate(date)}`);
+    if (time) lines.push(`Time: ${isoToFriendlyTime(time)}`);
     if (location.trim()) lines.push(`Location: ${location.trim()}`);
     if (amountMode === "fixed" && amount.trim()) lines.push(`Amount: ${amount.trim()}`);
     if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}`);
@@ -726,15 +851,15 @@ function EventDetailsComposer({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Date</label>
-            <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="Aug 3" className={field} />
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Time</label>
-            <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="3 PM" className={field} />
+            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Location</label>
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="123 Main St" className={field} />
+            <LocationAutocomplete value={location} onChange={setLocation} className={field} />
           </div>
         </div>
 
