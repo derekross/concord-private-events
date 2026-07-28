@@ -1241,6 +1241,18 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 /** Quick-reaction choices in the long-press action menu. */
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🎊"];
 
+/** env(safe-area-inset-top), measured once (CSS env isn't readable from JS). */
+let cachedSafeAreaTop: number | undefined;
+function safeAreaTop(): number {
+  if (cachedSafeAreaTop !== undefined) return cachedSafeAreaTop;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;visibility:hidden;padding-top:env(safe-area-inset-top)";
+  document.body.appendChild(probe);
+  cachedSafeAreaTop = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+  probe.remove();
+  return cachedSafeAreaTop;
+}
+
 /** Resolved name for the reply banner. */
 function ReplyBannerName({ pubkey }: { pubkey: string }) {
   const { data: profile } = useAuthor(pubkey);
@@ -1308,8 +1320,16 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
   const openActionMenu = (msg: ChatMessage, x: number, y: number) => {
     const MENU_W = 264;
     const MENU_H = 190;
+    const GAP = 12;
+    // Never slide under the fixed header + banner block.
+    const topBar =
+      (window.innerWidth >= 640 ? 232 : 200) + safeAreaTop();
     const left = Math.max(8, Math.min(x - 24, window.innerWidth - MENU_W - 8));
-    const top = Math.max(8, Math.min(y - MENU_H, window.innerHeight - MENU_H - 8));
+    // Prefer above the press point; flip below when there's no room.
+    const fitsAbove = y - MENU_H - GAP >= topBar;
+    const top = fitsAbove
+      ? y - MENU_H
+      : Math.min(y + GAP, window.innerHeight - MENU_H - 8);
     setActionMenu({ msg, left, top });
   };
 
