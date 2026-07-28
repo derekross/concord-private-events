@@ -149,7 +149,9 @@ export function parseEventDetails(messages: { content: string; createdAt: number
       if (!details.amount) {
         const amount = tryMatch(text, [AMOUNT_PATTERN]);
         if (amount) {
-          details.amount = amount;
+          // Only digit-bearing amounts are concrete suggestions; words like
+          // "any"/"open" mean donations — no amount carried into pay links.
+          if (/\d/.test(amount)) details.amount = amount;
           continue;
         }
       }

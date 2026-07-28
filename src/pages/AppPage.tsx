@@ -467,13 +467,15 @@ function ChipInCard({ details }: { details: ParsedEventDetails }) {
         <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Chip In</p>
           <p className="text-2xl font-bold leading-snug">Send the host money</p>
-          {details.amount && (
+          {details.amount ? (
             <p className="text-lg text-white/90">
               {details.amount} suggested
               {sats !== undefined && (
                 <span className="text-white/70 text-sm"> · ≈ {sats.toLocaleString()} sats</span>
               )}
             </p>
+          ) : (
+            <p className="text-lg text-white/90">Donate any amount 💛</p>
           )}
         </div>
       </div>
@@ -673,7 +675,9 @@ function EventDetailsComposer({
   const [date, setDate] = useState(details.date ?? "");
   const [time, setTime] = useState(details.time ?? "");
   const [location, setLocation] = useState(details.location ?? "");
-  // ONE suggested amount, however many payment methods are offered.
+  // ONE suggested amount, however many payment methods are offered — or
+  // open donations, where guests choose what to give.
+  const [amountMode, setAmountMode] = useState<"fixed" | "open">(details.amount ? "fixed" : "open");
   const [amount, setAmount] = useState(details.amount ?? "");
   const [cashapp, setCashapp] = useState(details.payments.find((p) => p.method === "cashapp")?.id ?? "");
   const [venmo, setVenmo] = useState(details.payments.find((p) => p.method === "venmo")?.id ?? "");
@@ -694,7 +698,7 @@ function EventDetailsComposer({
     if (date.trim()) lines.push(`Date: ${date.trim()}`);
     if (time.trim()) lines.push(`Time: ${time.trim()}`);
     if (location.trim()) lines.push(`Location: ${location.trim()}`);
-    if (amount.trim()) lines.push(`Amount: ${amount.trim()}`);
+    if (amountMode === "fixed" && amount.trim()) lines.push(`Amount: ${amount.trim()}`);
     if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}`);
     if (venmo.trim()) lines.push(`Venmo: ${venmo.trim()}`);
     if (lightning.trim()) lines.push(`Lightning: ${lightning.trim()}`);
@@ -738,9 +742,41 @@ function EventDetailsComposer({
           <p className="text-xs font-semibold text-gray-600 mb-2">💸 Payment info (optional — how guests chip in)</p>
           <div className="space-y-2">
             <div>
-              <label className="text-[11px] font-semibold text-gray-500 mb-1 block">Suggested amount (one for all methods)</label>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$25" className={field} />
+              <label className="text-[11px] font-semibold text-gray-500 mb-1 block">Contribution</label>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAmountMode("fixed")}
+                  aria-pressed={amountMode === "fixed"}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    amountMode === "fixed"
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "bg-white border border-orange-200 text-gray-700 hover:bg-orange-50"
+                  }`}
+                >
+                  Fixed amount
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAmountMode("open")}
+                  aria-pressed={amountMode === "open"}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    amountMode === "open"
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "bg-white border border-orange-200 text-gray-700 hover:bg-orange-50"
+                  }`}
+                >
+                  Open donations
+                </button>
+              </div>
             </div>
+            {amountMode === "fixed" ? (
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$25 (one amount for all methods)" className={field} />
+            ) : (
+              <p className="text-xs text-gray-500 px-1">
+                Guests choose how much to give — payment links won't prefill an amount.
+              </p>
+            )}
             <Input value={cashapp} onChange={(e) => setCashapp(e.target.value)} placeholder="Cash App $cashtag" className={field} />
             <Input value={venmo} onChange={(e) => setVenmo(e.target.value)} placeholder="Venmo @username" className={field} />
             <Input value={lightning} onChange={(e) => setLightning(e.target.value)} placeholder="Lightning address (you@wallet.com)" className={field} />
