@@ -19,6 +19,8 @@ interface ChatMessageRowProps {
   onAction?: (msg: ChatMessage, x: number, y: number) => void;
   /** Tap on a reaction chip (toggle the viewer's reaction). */
   onReactionTap?: (msg: ChatMessage, emoji: string) => void;
+  /** Tap on a quoted block → jump to the original message. */
+  onQuoteClick?: (rumorId: string) => void;
 }
 
 /** Deterministic color from pubkey for avatar fallback */
@@ -125,7 +127,7 @@ function useLongPress(onFire: (x: number, y: number) => void) {
   };
 }
 
-export const ChatMessageRow = memo(function ChatMessageRow({ msg, isMine, onAction, onReactionTap }: ChatMessageRowProps) {
+export const ChatMessageRow = memo(function ChatMessageRow({ msg, isMine, onAction, onReactionTap, onQuoteClick }: ChatMessageRowProps) {
   const { data: profile } = useAuthor(msg.pubkey);
   const name = getDisplayName(profile, msg.pubkey);
   const color = pubkeyColor(msg.pubkey);
@@ -139,16 +141,21 @@ export const ChatMessageRow = memo(function ChatMessageRow({ msg, isMine, onActi
   const longPress = useLongPress((x, y) => onAction?.(msg, x, y));
 
   const quoteBlock = msg.replyTo && (
-    <div
-      className={`mb-1 rounded-md border-l-2 px-2 py-1 text-xs ${
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onQuoteClick?.(msg.replyTo!.id);
+      }}
+      title="Jump to original"
+      className={`mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs ${
         isMine
-          ? "border-white/60 bg-white/15 text-white/90"
-          : "border-red-300 bg-orange-50 text-gray-600"
+          ? "border-white/60 bg-white/15 text-white/90 hover:bg-white/25"
+          : "border-red-300 bg-orange-50 text-gray-600 hover:bg-orange-100"
       }`}
     >
       <AuthorName pubkey={msg.replyTo.pubkey} className="font-semibold" />
       <span className="line-clamp-2 break-words"> {msg.replyTo.content}</span>
-    </div>
+    </button>
   );
 
   const reactionsRow = msg.reactions && msg.reactions.length > 0 && (

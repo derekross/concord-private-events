@@ -77,18 +77,28 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
 
             if (ev.kind === KIND_MESSAGE) {
               const imeta = ev.tags?.filter((t: string[]) => t[0] === "imeta") ?? [];
-              const confirmed: ChatMessage = {
-                id: ev.rumorId,
-                pubkey: ev.author,
-                content: ev.content,
-                createdAt: ev.createdAt,
-                imeta,
-                images: imagesFromImeta(imeta),
-              };
               queryClient.setQueryData<ChatMessage[]>(chatKey, (old = []) => {
+                // Resolve the quote-reply snippet against cached messages so
+                // the confirmed flip keeps the quote the optimistic copy had.
+                const qId = ev.tags.find((t) => t[0] === "q")?.[1];
+                const replyTarget = qId ? old.find((m) => m.id === qId) : undefined;
+                const confirmed: ChatMessage = {
+                  id: ev.rumorId,
+                  pubkey: ev.author,
+                  content: ev.content,
+                  createdAt: ev.createdAt,
+                  imeta,
+                  images: imagesFromImeta(imeta),
+                  replyTo: replyTarget
+                    ? { id: replyTarget.id, pubkey: replyTarget.pubkey, content: replyTarget.content.slice(0, 120) }
+                    : undefined,
+                };
                 if (old.some((m) => m.id === ev.rumorId)) {
-                  // Our own optimistic send — flip it to confirmed in place.
-                  return old.map((m) => (m.id === ev.rumorId ? confirmed : m));
+                  // Our own optimistic send — flip it to confirmed in place,
+                  // keeping any reactions already gathered.
+                  return old.map((m) =>
+                    m.id === ev.rumorId ? { ...confirmed, reactions: m.reactions } : m
+                  );
                 }
                 return [...old, confirmed].sort((a, b) => a.createdAt - b.createdAt);
               });

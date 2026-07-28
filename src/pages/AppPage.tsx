@@ -1239,7 +1239,15 @@ function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
 // ── Chat Tab ─────────────────────────────────────────────────────────────────
 
 /** Quick-reaction choices in the long-press action menu. */
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "😮", "🎊"];
+const QUICK_REACTIONS = ["❤️", "👍", "👎", "😂", "😮", "😢"];
+
+/** Full emoji picker choices (the ＋ button in the action menu). */
+const PICKER_EMOJIS = [
+  "😀", "😅", "🤣", "😊", "😍", "🥰", "😘", "🤔",
+  "🙄", "😴", "🤗", "🥳", "😎", "🤯", "😭", "😤",
+  "🙌", "👏", "🙏", "💪", "🔥", "✨", "💯", "🎈",
+  "🎉", "🎊", "🥂", "🍾", "💜", "💙", "💚", "🧡",
+];
 
 /** env(safe-area-inset-top), measured once (CSS env isn't readable from JS). */
 let cachedSafeAreaTop: number | undefined;
@@ -1267,7 +1275,8 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<{ url: string; tags: string[][] }[]>([]);
   // Long-press action menu + quote-reply composer state.
-  const [actionMenu, setActionMenu] = useState<{ msg: ChatMessage; left: number; top: number } | null>(null);
+  const [actionMenu, setActionMenu] = useState<{ msg: ChatMessage; x: number; y: number; picker: boolean } | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1318,19 +1327,7 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
 
   /** Long-press on a message → floating action menu at the press point. */
   const openActionMenu = (msg: ChatMessage, x: number, y: number) => {
-    const MENU_W = 264;
-    const MENU_H = 190;
-    const GAP = 12;
-    // Never slide under the fixed header + banner block.
-    const topBar =
-      (window.innerWidth >= 640 ? 232 : 200) + safeAreaTop();
-    const left = Math.max(8, Math.min(x - 24, window.innerWidth - MENU_W - 8));
-    // Prefer above the press point; flip below when there's no room.
-    const fitsAbove = y - MENU_H - GAP >= topBar;
-    const top = fitsAbove
-      ? y - MENU_H
-      : Math.min(y + GAP, window.innerHeight - MENU_H - 8);
-    setActionMenu({ msg, left, top });
+    setActionMenu({ msg, x, y, picker: false });
   };
 
   /** Toggle the viewer's reaction on a message. */
@@ -1342,6 +1339,15 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
     } else {
       sendReaction(msg, emoji, user.signer, user.pubkey).catch((e) => console.error("React failed:", e));
     }
+  };
+
+  /** Tap a quoted block → smooth-scroll to the original and flash it. */
+  const handleQuoteClick = (rumorId: string) => {
+    const el = document.getElementById(`msg-${rumorId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightId(rumorId);
+    window.setTimeout(() => setHighlightId((cur) => (cur === rumorId ? null : cur)), 1400);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1420,13 +1426,21 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
           ) : (
             <div className="space-y-2 py-1">
               {messages.map((msg) => (
-                <ChatMessageRow
+                <div
                   key={msg.id}
-                  msg={msg}
-                  isMine={msg.pubkey === user?.pubkey}
-                  onAction={user ? openActionMenu : undefined}
-                  onReactionTap={user ? handleReactionTap : undefined}
-                />
+                  id={`msg-${msg.id}`}
+                  className={`rounded-xl transition-colors duration-700 ${
+                    highlightId === msg.id ? "bg-orange-200/60" : ""
+                  }`}
+                >
+                  <ChatMessageRow
+                    msg={msg}
+                    isMine={msg.pubkey === user?.pubkey}
+                    onAction={user ? openActionMenu : undefined}
+                    onReactionTap={user ? handleReactionTap : undefined}
+                    onQuoteClick={handleQuoteClick}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -1509,60 +1523,99 @@ function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: 
       </CardContent>
 
       {/* Long-press action menu (react / reply / delete) */}
-      {actionMenu && user && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setActionMenu(null)}
-          onContextMenu={(e) => e.preventDefault()}
-        >
+      {actionMenu && user && (() => {
+        const MENU_W = 264;
+        const MENU_H = actionMenu.picker ? 330 : 190;
+        const GAP = 12;
+        // Never slide under the fixed header + banner block.
+        const topBar = (window.innerWidth >= 640 ? 232 : 200) + safeAreaTop();
+        const left = Math.max(8, Math.min(actionMenu.x - 24, window.innerWidth - MENU_W - 8));
+        // Prefer above the press point; flip below when there's no room.
+        const fitsAbove = actionMenu.y - MENU_H - GAP >= topBar;
+        const top = fitsAbove
+          ? actionMenu.y - MENU_H
+          : Math.min(actionMenu.y + GAP, window.innerHeight - MENU_H - 8);
+
+        return (
           <div
-            className="absolute w-64 rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl"
-            style={{ left: actionMenu.left, top: actionMenu.top }}
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-40"
+            onClick={() => setActionMenu(null)}
+            onContextMenu={(e) => e.preventDefault()}
           >
-            {/* Quick reactions */}
-            <div className="flex justify-between px-1 pb-1.5">
-              {QUICK_REACTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => {
-                    handleReactionTap(actionMenu.msg, emoji);
-                    setActionMenu(null);
-                  }}
-                  className="flex size-10 items-center justify-center rounded-full text-xl transition-all hover:bg-orange-100 active:scale-125"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-            <div className="border-t border-orange-100" />
-            {/* Reply */}
-            <button
-              onClick={() => {
-                setReplyTo(actionMenu.msg);
-                setActionMenu(null);
-              }}
-              className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-800 hover:bg-orange-50 active:bg-orange-100"
+            <div
+              className="absolute w-64 rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl"
+              style={{ left, top }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <span>↩️</span> Reply
-            </button>
-            {/* Delete (own messages only) */}
-            {actionMenu.msg.pubkey === user.pubkey && (
+              {actionMenu.picker ? (
+                /* Full emoji picker */
+                <div className="grid max-h-64 grid-cols-6 gap-0.5 overflow-y-auto overscroll-contain pb-1">
+                  {PICKER_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleReactionTap(actionMenu.msg, emoji);
+                        setActionMenu(null);
+                      }}
+                      className="flex size-10 items-center justify-center rounded-full text-xl transition-all hover:bg-orange-100 active:scale-125"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                /* Quick reactions + ＋ for the full picker */
+                <div className="flex justify-between px-1 pb-1.5">
+                  {QUICK_REACTIONS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleReactionTap(actionMenu.msg, emoji);
+                        setActionMenu(null);
+                      }}
+                      className="flex size-9 items-center justify-center rounded-full text-xl transition-all hover:bg-orange-100 active:scale-125"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setActionMenu({ ...actionMenu, picker: true })}
+                    aria-label="More emojis"
+                    className="flex size-9 items-center justify-center rounded-full text-base text-gray-500 transition-all hover:bg-orange-100 active:scale-125"
+                  >
+                    ＋
+                  </button>
+                </div>
+              )}
+              <div className="border-t border-orange-100" />
+              {/* Reply */}
               <button
                 onClick={() => {
-                  deleteMessage(actionMenu.msg.id, user.signer, user.pubkey).catch((e) =>
-                    console.error("Delete failed:", e)
-                  );
+                  setReplyTo(actionMenu.msg);
                   setActionMenu(null);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 active:bg-red-100"
+                className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-800 hover:bg-orange-50 active:bg-orange-100"
               >
-                <Trash2 size={15} /> Delete
+                <span>↩️</span> Reply
               </button>
-            )}
+              {/* Delete (own messages only) */}
+              {actionMenu.msg.pubkey === user.pubkey && (
+                <button
+                  onClick={() => {
+                    deleteMessage(actionMenu.msg.id, user.signer, user.pubkey).catch((e) =>
+                      console.error("Delete failed:", e)
+                    );
+                    setActionMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 active:bg-red-100"
+                >
+                  <Trash2 size={15} /> Delete
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </Card>
   );
 }
