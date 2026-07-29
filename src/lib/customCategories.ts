@@ -49,10 +49,7 @@ export function useCustomCategories() {
     const trimmed = name.trim();
     if (!trimmed || !emoji) return false;
     const key = trimmed.toLowerCase();
-    if (
-      customs.some((c) => c.name.toLowerCase() === key) ||
-      key in CATEGORY_EMOJI
-    ) {
+    if (customs.some((c) => c.name.toLowerCase() === key)) {
       return false; // already exists
     }
     const next = [...customs, { name: trimmed, emoji }];

@@ -23,10 +23,10 @@ header and hero.
     and **Lightning** taps that resolve LNURL-pay into a ready BOLT-11 invoice
     with the host's USD amount converted to sats in the background
   - *Sats ⇄ USD* converter card (Coinbase spot, 60s refresh)
-- **Sign-Up** — add/claim/unclaim/delete items across built-in categories
-  (seafood, drinks, sides, supplies, volunteer) plus **custom categories with
-  an emoji picker**, so the board fits any kind of gathering. Claims show the
-  claimer's profile name.
+- **Sign-Up** — add/claim/unclaim/delete items. No default categories: each
+  board grows its own **custom categories with an emoji picker**, so it fits
+  any kind of gathering. Claims show the claimer's profile name, and deletes
+  confirm in a styled dialog.
 - **Chat** — encrypted group chat with image attachments, an in-app image
   viewer, edit/delete support, "Sending…" and "(edited)" indicators, and a
   deep link to continue in **Armada** (the full Concord client).

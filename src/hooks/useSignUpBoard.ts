@@ -297,7 +297,7 @@ export function useSignUpBoard(channel: ChannelV2 | undefined, banned?: Set<stri
       );
 
       const content = serializeSignUpItem({
-        category: "seafood",
+        category: "",
         name: "",
         claimedBy: claimedBy ?? "",
         claimedAt: override.claimedAt ?? 0,

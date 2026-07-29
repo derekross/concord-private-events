@@ -52,18 +52,17 @@ export const EVENT_CONFIG: EventConfig = {
   },
 };
 
-/** Sign-up board item categories. */
-export const SIGN_UP_CATEGORIES = [
-  "seafood",
-  "drinks",
-  "sides",
-  "supplies",
-  "volunteer",
-] as const;
+/**
+ * Sign-up board ships with NO default categories — this is a generic events
+ * app, so users create their own (with an emoji) from the Add Item section.
+ * The legacy maps below exist only so boards that already have items in
+ * these categories keep rendering nicely.
+ */
+export const SIGN_UP_CATEGORIES: readonly string[] = [];
 
-export type SignUpCategory = (typeof SIGN_UP_CATEGORIES)[number];
+export type SignUpCategory = string;
 
-export const CATEGORY_LABELS: Record<SignUpCategory, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   seafood: "🦐 Seafood",
   drinks: "🥤 Drinks",
   sides: "🥗 Sides",
@@ -71,7 +70,7 @@ export const CATEGORY_LABELS: Record<SignUpCategory, string> = {
   volunteer: "🙋 Volunteer",
 };
 
-export const CATEGORY_EMOJI: Record<SignUpCategory, string> = {
+export const CATEGORY_EMOJI: Record<string, string> = {
   seafood: "🦐",
   drinks: "🥤",
   sides: "🥗",

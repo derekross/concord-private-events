@@ -8,6 +8,17 @@ import { useControlPlane } from "@/hooks/useControlPlane";
 import { useChannels } from "@/hooks/useChannels";
 import { EVENT_CONFIG, SIGN_UP_CATEGORIES } from "@/lib/eventConfig";
 import { useCustomCategories, categoryLabel, categoryEmoji, EMOJI_CHOICES } from "@/lib/customCategories";
+import type { SignUpItem } from "@/lib/signUpModel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   parseEventDetails,
   googleCalendarUrl,
@@ -1284,15 +1295,16 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
   const { user } = useCurrentUser();
   const { customs, addCustomCategory } = useCustomCategories();
   const [newItemName, setNewItemName] = useState("");
-  const [newItemCategory, setNewItemCategory] = useState<string>("seafood");
+  const [newItemCategory, setNewItemCategory] = useState<string>("");
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customEmoji, setCustomEmoji] = useState(EMOJI_CHOICES[0]);
+  const [deleteTarget, setDeleteTarget] = useState<SignUpItem | null>(null);
 
   const handleAdd = async () => {
-    if (!newItemName.trim() || !user) return;
+    if (!newItemName.trim() || !effectiveCategory || !user) return;
     try {
-      await addItem(newItemCategory, newItemName, user.signer, user.pubkey);
+      await addItem(effectiveCategory, newItemName, user.signer, user.pubkey);
       setNewItemName("");
     } catch (e) {
       console.error("Failed to add item:", e);
@@ -1307,9 +1319,14 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
     }
   };
 
-  const handleDelete = (itemId: string) => {
-    if (!user || !confirm("Delete this item?")) return;
-    deleteItem(itemId, user.signer, user.pubkey).catch((e) => console.error("Delete failed:", e));
+  const handleDelete = (item: SignUpItem) => setDeleteTarget(item);
+
+  const confirmDelete = () => {
+    if (!user || !deleteTarget) return;
+    deleteItem(deleteTarget.id, user.signer, user.pubkey).catch((e) =>
+      console.error("Delete failed:", e)
+    );
+    setDeleteTarget(null);
   };
 
   // Category chips: built-ins + the user's custom categories.
@@ -1321,8 +1338,8 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
     return [...new Set(keys)];
   }, [customs]);
 
-  // Group items by category — built-ins, customs, and any category that
-  // shows up in the data (e.g. created on another device).
+  // Group items by category — customs and any category that shows up in
+  // the data (e.g. created on another device or a legacy board).
   const itemsByCategory = useMemo(() => {
     const keys = [
       ...chipCategories,
@@ -1333,6 +1350,13 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
       items: items.filter((item) => item.category === cat),
     }));
   }, [chipCategories, items]);
+
+  // Derived instead of state: a valid selection always exists when there
+  // are chips, and the creator shows whenever no categories exist yet.
+  const effectiveCategory = chipCategories.includes(newItemCategory)
+    ? newItemCategory
+    : (chipCategories[0] ?? "");
+  const creatorOpen = customOpen || chipCategories.length === 0;
 
   return (
     <div className="space-y-6">
@@ -1350,7 +1374,11 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
               className="flex-1 text-base sm:text-sm h-11 bg-white/95 border-transparent text-gray-900 placeholder:text-gray-400"
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
-            <Button onClick={handleAdd} className="bg-white text-red-700 hover:bg-white/90 font-bold h-11 px-5 shadow-sm">
+            <Button
+              onClick={handleAdd}
+              disabled={!effectiveCategory}
+              className="bg-white text-red-700 hover:bg-white/90 font-bold h-11 px-5 shadow-sm disabled:opacity-50"
+            >
               Add
             </Button>
           </div>
@@ -1358,7 +1386,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
           {/* Category picker — emoji chips instead of a dropdown */}
           <div className="flex flex-wrap gap-1.5">
             {chipCategories.map((cat) => {
-              const selected = newItemCategory === cat;
+              const selected = effectiveCategory === cat;
               return (
                 <button
                   key={cat}
@@ -1376,7 +1404,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
             })}
             <button
               onClick={() => setCustomOpen((v) => !v)}
-              aria-expanded={customOpen}
+              aria-expanded={creatorOpen}
               className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold bg-white/10 border border-dashed border-white/40 text-white hover:bg-white/20 transition-colors"
             >
               ＋ New
@@ -1384,7 +1412,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
           </div>
 
           {/* Custom category creator */}
-          {customOpen && (
+          {creatorOpen && (
             <div className="rounded-xl border border-white/25 bg-black/15 p-3 space-y-2.5">
               <p className="text-xs font-semibold text-white/90">Create a category</p>
               <div className="grid grid-cols-8 gap-1">
@@ -1484,7 +1512,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
                           size="sm"
                           variant="ghost"
                           className="text-gray-400 hover:text-red-600 px-2 min-h-9"
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item)}
                           title="Delete item"
                         >
                           <Trash2 size={14} />
@@ -1505,7 +1533,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
                           size="sm"
                           variant="ghost"
                           className="text-gray-400 hover:text-red-600 px-2 min-h-9"
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item)}
                           title="Delete item"
                         >
                           <Trash2 size={14} />
@@ -1517,7 +1545,7 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
                       size="sm"
                       variant="ghost"
                       className="text-gray-400 hover:text-red-600 px-2 min-h-9 flex-shrink-0"
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item)}
                       title="Delete item"
                     >
                       <Trash2 size={14} />
@@ -1539,6 +1567,31 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
           </CardContent>
         </Card>
       )}
+
+      {/* Delete confirmation */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove{" "}
+              <span className="font-semibold text-gray-900">
+                {deleteTarget?.name}
+              </span>{" "}
+              from the board. Everyone will see it disappear.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
