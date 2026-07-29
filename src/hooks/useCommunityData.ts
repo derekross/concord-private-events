@@ -41,7 +41,10 @@ export function useCommunityData(): CommunityDataResult {
   const { data, isLoading, isError, error } = useQuery({
     queryKey,
     enabled: Boolean(pubkey && EVENT_CONFIG.communityId),
-    staleTime: 30_000,
+    // Poll briskly: key rotations (bans/refounding) arrive as a new list
+    // entry with fresh held_roots — the whole app re-derives from this.
+    staleTime: 15_000,
+    refetchInterval: 15_000,
     queryFn: async ({ signal }) => {
       if (!pubkey || !EVENT_CONFIG.communityId) return null;
 

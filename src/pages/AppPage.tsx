@@ -158,15 +158,15 @@ export default function AppPage() {
           {/* forceMount keeps every tab's query alive from first render:
               data loads in the background and tab switches are instant. */}
           <TabsContent value="details" forceMount className="data-[state=inactive]:hidden">
-            <EventDetailsTab channel={eventInfoChannel} />
+            <EventDetailsTab channel={eventInfoChannel} banned={folded?.banned} />
           </TabsContent>
 
           <TabsContent value="signup" forceMount className="data-[state=inactive]:hidden">
-            <SignUpTab channel={signUpChannel} />
+            <SignUpTab channel={signUpChannel} banned={folded?.banned} />
           </TabsContent>
 
           <TabsContent value="chat" forceMount className="data-[state=inactive]:hidden">
-            <ChatTab channel={chatChannel} active={tab === "chat"} />
+            <ChatTab channel={chatChannel} active={tab === "chat"} banned={folded?.banned} />
           </TabsContent>
         </Tabs>
       </main>
@@ -697,8 +697,8 @@ const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
   { status: "declined", emoji: "✕", label: "Can't go" },
 ];
 
-function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
-  const { messages, isLoading } = useChannelChat(channel);
+function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; banned?: Set<string> }) {
+  const { messages, isLoading } = useChannelChat(channel, undefined, banned);
   const { user } = useCurrentUser();
   const {
     events,
@@ -707,7 +707,7 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
     saveEvent,
     deleteEvent,
     setRsvp,
-  } = useChannelCalendar(channel, user?.pubkey);
+  } = useChannelCalendar(channel, user?.pubkey, banned);
   const [composerOpen, setComposerOpen] = useState(false);
 
   const isOwner = Boolean(
@@ -1224,8 +1224,8 @@ function ClaimedBy({ pubkey }: { pubkey: string }) {
   );
 }
 
-function SignUpTab({ channel }: { channel: ChannelV2 | undefined }) {
-  const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel);
+function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned?: Set<string> }) {
+  const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel, banned);
   const { user } = useCurrentUser();
   const { customs, addCustomCategory } = useCustomCategories();
   const [newItemName, setNewItemName] = useState("");
@@ -1519,10 +1519,10 @@ function ReplyBannerName({ pubkey }: { pubkey: string }) {
   return <>{getDisplayName(profile, pubkey)}</>;
 }
 
-function ChatTab({ channel, active }: { channel: ChannelV2 | undefined; active: boolean }) {
+function ChatTab({ channel, active, banned }: { channel: ChannelV2 | undefined; active: boolean; banned?: Set<string> }) {
   const { user } = useCurrentUser();
   const { messages, isLoading, sendMessage, deleteMessage, sendReaction, removeReaction } =
-    useChannelChat(channel, user?.pubkey);
+    useChannelChat(channel, user?.pubkey, banned);
   const uploadFile = useUploadFile();
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<{ url: string; tags: string[][] }[]>([]);

@@ -47,18 +47,21 @@ export function useChannels(
     }
 
     const channels = channelsViewLib(community, folded ?? undefined);
+    // Case-insensitive name lookup — Armada display names may be capitalized
+    // ("General", "Chat"), while our config keys are lowercase.
     const channelsByName = new Map<string, ChannelV2>();
     for (const ch of channels) {
-      channelsByName.set(ch.name, ch);
+      channelsByName.set(ch.name.toLowerCase(), ch);
     }
+    const byName = (name: string) => channelsByName.get(name.toLowerCase());
 
-    const generalChannel = channelsByName.get("general");
+    const generalChannel = byName("general");
     const chatChannel =
-      channelsByName.get(EVENT_CONFIG.channels.chat) ?? generalChannel ?? channels[0];
+      byName(EVENT_CONFIG.channels.chat) ?? generalChannel ?? channels[0];
     const eventInfoChannel =
-      channelsByName.get(EVENT_CONFIG.channels.eventInfo) ?? generalChannel ?? chatChannel;
+      byName(EVENT_CONFIG.channels.eventInfo) ?? generalChannel ?? chatChannel;
     const signUpChannel =
-      channelsByName.get(EVENT_CONFIG.channels.signUp) ?? generalChannel ?? chatChannel;
+      byName(EVENT_CONFIG.channels.signUp) ?? generalChannel ?? chatChannel;
 
     return {
       channels,

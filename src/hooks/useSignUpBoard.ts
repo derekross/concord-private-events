@@ -61,13 +61,17 @@ function pruneOps(ops: LocalOps, now: number) {
   for (const [id, expires] of ops.tombstones) if (expires <= now) ops.tombstones.delete(id);
 }
 
-export function useSignUpBoard(channel: ChannelV2 | undefined) {
+export function useSignUpBoard(channel: ChannelV2 | undefined, banned?: Set<string>) {
   const { nostr } = useNostr();
   const queryClient = useQueryClient();
   const channelRef = useRef(channel);
   useEffect(() => {
     channelRef.current = channel;
   }, [channel]);
+  const bannedRef = useRef(banned);
+  useEffect(() => {
+    bannedRef.current = banned;
+  }, [banned]);
   const opsRef = useRef<LocalOps>(emptyOps());
 
   const channelId = channel?.idHex;
@@ -81,7 +85,7 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
 
       // Shared deduped wrap fetch (one relay round-trip across all hooks
       // on this channel, invalidated by the live subscription).
-      const { active, deletedIds } = await fetchChannelActive(nostr, queryClient, ch, signal);
+      const { active, deletedIds } = await fetchChannelActive(nostr, queryClient, ch, signal, bannedRef.current);
 
       // Collect items and edits (excluding deleted)
       const itemMap = new Map<string, SignUpItem>();

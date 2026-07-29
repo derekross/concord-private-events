@@ -85,7 +85,11 @@ interface ReactionOps {
   removals: Map<string, number>;
 }
 
-export function useChannelChat(channel: ChannelV2 | undefined, viewerPubkey?: string) {
+export function useChannelChat(
+  channel: ChannelV2 | undefined,
+  viewerPubkey?: string,
+  banned?: Set<string>,
+) {
   const { nostr } = useNostr();
   const queryClient = useQueryClient();
   const channelRef = useRef(channel);
@@ -97,6 +101,11 @@ export function useChannelChat(channel: ChannelV2 | undefined, viewerPubkey?: st
   useEffect(() => {
     viewerRef.current = viewerPubkey;
   }, [viewerPubkey]);
+
+  const bannedRef = useRef(banned);
+  useEffect(() => {
+    bannedRef.current = banned;
+  }, [banned]);
 
   // Message rumor ids deleted locally → tombstone expiry (bridges the gap
   // between "delete wrap published" and "delete wrap visible on relays").
@@ -114,7 +123,7 @@ export function useChannelChat(channel: ChannelV2 | undefined, viewerPubkey?: st
 
       // Shared deduped wrap fetch (one relay round-trip across all hooks
       // on this channel, invalidated by the live subscription).
-      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal);
+      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal, bannedRef.current);
       const chatEvents = active.filter((e) => e.kind === KIND_MESSAGE);
 
       // ── Edits (kind 3302): author-only, latest by ms wins ──────────────

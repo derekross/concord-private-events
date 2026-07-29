@@ -41,7 +41,11 @@ interface CalendarData {
   votesByEvent: Record<string, RsvpVote[]>;
 }
 
-export function useChannelCalendar(channel: ChannelV2 | undefined, viewerPubkey?: string) {
+export function useChannelCalendar(
+  channel: ChannelV2 | undefined,
+  viewerPubkey?: string,
+  banned?: Set<string>,
+) {
   const { nostr } = useNostr();
   const queryClient = useQueryClient();
   const channelRef = useRef(channel);
@@ -53,6 +57,11 @@ export function useChannelCalendar(channel: ChannelV2 | undefined, viewerPubkey?
   useEffect(() => {
     viewerRef.current = viewerPubkey;
   }, [viewerPubkey]);
+
+  const bannedRef = useRef(banned);
+  useEffect(() => {
+    bannedRef.current = banned;
+  }, [banned]);
 
   // Event rumor ids deleted locally → expiry.
   const tombstonesRef = useRef(new Map<string, number>());
@@ -70,7 +79,7 @@ export function useChannelCalendar(channel: ChannelV2 | undefined, viewerPubkey?
 
       // Shared deduped wrap fetch (one relay round-trip across all hooks
       // on this channel, invalidated by the live subscription).
-      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal);
+      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal, bannedRef.current);
 
       const now = Date.now();
       for (const [id, expires] of tombstonesRef.current) {

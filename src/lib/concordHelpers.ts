@@ -148,17 +148,24 @@ export function fetchChannelActive(
   queryClient: QueryClient,
   channel: ChannelV2,
   signal?: AbortSignal,
+  banned?: Set<string>,
 ): Promise<{ active: OpenedEvent[]; deletedIds: Set<string> }> {
   const authors = channel.streams.map((s) => s.group.pk);
+  const bannedKey = banned ? [...banned].sort().join(",") : "";
   return queryClient.fetchQuery({
-    queryKey: ["channel-active", channel.idHex],
+    queryKey: ["channel-active", channel.idHex, bannedKey],
     queryFn: async () => {
       const wraps = await nostr.query(
         [{ kinds: [KIND_WRAP], authors, limit: 500 }],
         { signal }
       );
       const opened = openChannelWraps(wraps as NostrEvent[], channel);
-      return filterDeleted(opened);
+      // Moderation: drop everything authored by banned members (matches
+      // Armada's fold — a ban hides the member's content everywhere).
+      const visible = banned?.size
+        ? opened.filter((ev) => !banned.has(ev.author))
+        : opened;
+      return filterDeleted(visible);
     },
     staleTime: 10_000,
     gcTime: 5 * 60 * 1000,
