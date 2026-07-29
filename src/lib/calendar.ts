@@ -52,6 +52,11 @@ export interface CalendarEvent {
   hashtags: string[];
   references: string[];
   participants: CalendarParticipant[];
+  /** Contribution extension: one suggested amount + payment handles. */
+  amount?: string;
+  cashapp?: string;
+  venmo?: string;
+  lightning?: string;
 }
 
 /** Input for building a calendar-event rumor. */
@@ -69,6 +74,14 @@ export interface CalendarEventInput {
   hashtags?: string[];
   references?: string[];
   participants?: CalendarParticipant[];
+  /**
+   * Contribution extension (custom tags, ignored by other NIP-52 clients):
+   * one suggested amount plus the host's payment handles.
+   */
+  amount?: string;
+  cashapp?: string;
+  venmo?: string;
+  lightning?: string;
 }
 
 /** A single member's RSVP (latest per pubkey wins). */
@@ -114,6 +127,11 @@ export function buildCalendarTags(input: CalendarEventInput): string[][] {
   if (input.summary) tags.push(["summary", input.summary]);
   if (input.image) tags.push(["image", input.image]);
   if (input.location) tags.push(["location", input.location]);
+  // Contribution extension (custom tags; plain NIP-52 clients ignore them).
+  if (input.amount) tags.push(["amount", input.amount]);
+  if (input.cashapp) tags.push(["cashapp", input.cashapp]);
+  if (input.venmo) tags.push(["venmo", input.venmo]);
+  if (input.lightning) tags.push(["lightning", input.lightning]);
   for (const t of input.hashtags ?? []) if (t.trim()) tags.push(["t", t.trim()]);
   for (const r of input.references ?? []) if (r.trim()) tags.push(["r", r.trim()]);
   for (const p of input.participants ?? []) {
@@ -163,6 +181,10 @@ export function parseCalendarRumor(ev: OpenedEvent): CalendarEvent | undefined {
     hashtags,
     references,
     participants,
+    amount: tag(ev, "amount")?.[1],
+    cashapp: tag(ev, "cashapp")?.[1],
+    venmo: tag(ev, "venmo")?.[1],
+    lightning: tag(ev, "lightning")?.[1],
   };
 }
 

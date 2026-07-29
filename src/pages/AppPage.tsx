@@ -15,9 +15,13 @@ import {
   appleMapsUrl,
   icsContent,
   numericAmount,
+  cashAppUrl,
+  venmoUrl,
+  lightningUrl,
   friendlyDateToIso,
   friendlyTimeToIso,
   type ParsedEventDetails,
+  type ParsedPayment,
 } from "@/lib/eventParser";
 import { isAppleDevice } from "@/lib/device";
 import { resolveLightningInvoiceUri, useBtcUsdRate } from "@/lib/lightning";
@@ -715,16 +719,47 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
     user.pubkey.toLowerCase() === EVENT_CONFIG.communityOwner.toLowerCase()
   );
 
-  const details = parseEventDetails(messages);
+  // Text-based event info is host-only. In a shared channel this keeps
+  // regular chat out of Additional Info — and stops any member hijacking
+  // the When/Chip In cards by posting "Date:"/"CashApp:" lines.
+  const ownerPubkey = EVENT_CONFIG.communityOwner?.toLowerCase();
+  const infoMessages = useMemo(
+    () =>
+      ownerPubkey
+        ? messages.filter((m) => m.pubkey.toLowerCase() === ownerPubkey)
+        : messages,
+    [messages, ownerPubkey]
+  );
+  const details = parseEventDetails(infoMessages);
 
   // NIP-52 events (Armada-compatible) take precedence; the free-form text
-  // parsing stays as the fallback for legacy posts.
-  const upcoming = useMemo(() => events.filter((e) => isUpcoming(e)), [events]);
+  // parsing stays as the fallback for legacy posts. The host's own events
+  // win the featured slot; member-created events list under "Also coming up".
+  const upcoming = useMemo(() => {
+    const up = events.filter((e) => isUpcoming(e));
+    if (ownerPubkey) {
+      up.sort((a, b) => {
+        const aOwner = a.author.toLowerCase() === ownerPubkey ? 0 : 1;
+        const bOwner = b.author.toLowerCase() === ownerPubkey ? 0 : 1;
+        return aOwner - bOwner;
+      });
+    }
+    return up;
+  }, [events, ownerPubkey]);
   const featured = upcoming[0];
   const alsoComing = upcoming.slice(1, 4);
+  // The event the HOST edits — addressable identity is (author, d), so the
+  // composer must target the owner's own event, never a member's.
+  const ownerEvent = useMemo(
+    () =>
+      ownerPubkey
+        ? upcoming.find((e) => e.author.toLowerCase() === ownerPubkey)
+        : upcoming[0],
+    [upcoming, ownerPubkey]
+  );
 
-  // The event's description carries payment lines + extra info in the same
-  // line format as legacy text posts — parse it the same way.
+  // The event's description is parsed for legacy payment lines + notes in
+  // the same line format as legacy text posts.
   const eventDetails = useMemo(
     () =>
       featured?.description
@@ -733,16 +768,35 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
     [featured]
   );
 
-  // Payments prefer the event description; legacy text is the fallback.
+  // Payments prefer the event's structured tags (amount/cashapp/venmo/
+  // lightning), then description lines (older events), then legacy text.
+  const tagPayments = useMemo<ParsedPayment[]>(() => {
+    if (!featured) return [];
+    const out: ParsedPayment[] = [];
+    if (featured.cashapp) {
+      out.push({ method: "cashapp", id: featured.cashapp, amount: featured.amount, url: cashAppUrl(featured.cashapp, featured.amount) });
+    }
+    if (featured.venmo) {
+      out.push({ method: "venmo", id: featured.venmo, amount: featured.amount, url: venmoUrl(featured.venmo, featured.amount) });
+    }
+    if (featured.lightning) {
+      out.push({ method: "lightning", id: featured.lightning, amount: featured.amount, url: lightningUrl(featured.lightning) });
+    }
+    return out;
+  }, [featured]);
+
   const mergedPayments =
-    featured && eventDetails && eventDetails.payments.length > 0
-      ? eventDetails.payments
-      : details.payments;
-  const mergedAmount = (featured && eventDetails?.amount) || details.amount;
+    tagPayments.length > 0
+      ? tagPayments
+      : featured && eventDetails && eventDetails.payments.length > 0
+        ? eventDetails.payments
+        : details.payments;
+  const mergedAmount = featured?.amount ?? eventDetails?.amount ?? details.amount;
   const paymentDetails: ParsedEventDetails = { ...details, amount: mergedAmount, payments: mergedPayments };
-  const notesToShow = featured
-    ? [...(eventDetails?.notes ?? []), ...details.notes]
-    : details.notes;
+
+  // Additional Info comes from the NIP-52 event description when an event
+  // exists; legacy text notes only as the no-event fallback.
+  const notesToShow = featured ? (eventDetails?.notes ?? []) : details.notes;
 
   const hasAnyDetails = Boolean(featured) || details.date || details.time || details.location;
   const locationToShow = featured?.location ?? (!featured ? details.location : undefined);
@@ -920,7 +974,7 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
           {composerOpen ? (
             <EventDetailsComposer
               details={details}
-              featured={featured}
+              featured={ownerEvent}
               communityName={EVENT_CONFIG.name}
               ownerMessage={ownerMessage}
               onSave={async (f) => {
@@ -938,22 +992,22 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
                     endIso && !isNaN(endIso.getTime()) && endIso.getTime() > startIso.getTime()
                       ? String(Math.floor(endIso.getTime() / 1000))
                       : undefined;
-                  const descLines: string[] = [];
-                  if (f.amountMode === "fixed" && f.amount.trim()) descLines.push(`Amount: ${f.amount.trim()}`);
-                  if (f.cashapp.trim()) descLines.push(`CashApp: ${f.cashapp.trim()}`);
-                  if (f.venmo.trim()) descLines.push(`Venmo: ${f.venmo.trim()}`);
-                  if (f.lightning.trim()) descLines.push(`Lightning: ${f.lightning.trim()}`);
-                  if (f.extra.trim()) descLines.push(f.extra.trim());
                   await saveEvent(
                     {
-                      identifier: featured?.identifier ?? randomCalendarId(),
+                      identifier: ownerEvent?.identifier ?? randomCalendarId(),
                       kind: KIND_CALENDAR_TIME,
                       title: f.title.trim(),
                       start: String(Math.floor(startIso.getTime() / 1000)),
                       end,
                       startTzid: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       location: f.location.trim() || undefined,
-                      description: descLines.join("\n") || undefined,
+                      // Payment info as structured tags (Armada ignores them);
+                      // the description carries only the extra info.
+                      amount: f.amountMode === "fixed" && f.amount.trim() ? f.amount.trim() : undefined,
+                      cashapp: f.cashapp.trim() || undefined,
+                      venmo: f.venmo.trim() || undefined,
+                      lightning: f.lightning.trim() || undefined,
+                      description: f.extra.trim() || undefined,
                     },
                     user.signer,
                     user.pubkey
@@ -962,9 +1016,9 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
                 setComposerOpen(false);
               }}
               onDeleteEvent={
-                featured
+                ownerEvent
                   ? async () => {
-                      await deleteEvent(featured, user.signer, user.pubkey);
+                      await deleteEvent(ownerEvent, user.signer, user.pubkey);
                       setComposerOpen(false);
                     }
                   : undefined
@@ -1029,12 +1083,13 @@ function EventDetailsComposer({
   const [endTime, setEndTime] = useState(() => (featured ? eventEndTimeIso(featured) : ""));
   const [location, setLocation] = useState(featured?.location ?? details.location ?? "");
   // ONE suggested amount, however many payment methods are offered — or
-  // open donations, where guests choose what to give.
-  const [amountMode, setAmountMode] = useState<"fixed" | "open">(details.amount ? "fixed" : "open");
-  const [amount, setAmount] = useState(details.amount ?? "");
-  const [cashapp, setCashapp] = useState(details.payments.find((p) => p.method === "cashapp")?.id ?? "");
-  const [venmo, setVenmo] = useState(details.payments.find((p) => p.method === "venmo")?.id ?? "");
-  const [lightning, setLightning] = useState(details.payments.find((p) => p.method === "lightning")?.id ?? "");
+  // open donations, where guests choose what to give. Prefers the event's
+  // structured payment tags, falling back to legacy text.
+  const [amountMode, setAmountMode] = useState<"fixed" | "open">((featured?.amount ?? details.amount) ? "fixed" : "open");
+  const [amount, setAmount] = useState(featured?.amount ?? details.amount ?? "");
+  const [cashapp, setCashapp] = useState(featured?.cashapp ?? details.payments.find((p) => p.method === "cashapp")?.id ?? "");
+  const [venmo, setVenmo] = useState(featured?.venmo ?? details.payments.find((p) => p.method === "venmo")?.id ?? "");
+  const [lightning, setLightning] = useState(featured?.lightning ?? details.payments.find((p) => p.method === "lightning")?.id ?? "");
   // Description = the event's description, else the owner's legacy extra lines.
   const [extra, setExtra] = useState(() => {
     if (featured?.description) return featured.description;
