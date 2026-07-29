@@ -16,13 +16,20 @@ import {
   icsContent,
   numericAmount,
   friendlyDateToIso,
-  isoToFriendlyDate,
   friendlyTimeToIso,
-  isoToFriendlyTime,
   type ParsedEventDetails,
 } from "@/lib/eventParser";
 import { isAppleDevice } from "@/lib/device";
 import { resolveLightningInvoiceUri, useBtcUsdRate } from "@/lib/lightning";
+import { useChannelCalendar } from "@/hooks/useChannelCalendar";
+import {
+  formatCalendarEventWhen,
+  isUpcoming,
+  randomCalendarId,
+  KIND_CALENDAR_TIME,
+  type CalendarEvent,
+  type RsvpStatus,
+} from "@/lib/calendar";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 import { Button } from "@/components/ui/button";
@@ -641,9 +648,58 @@ function ChipInCard({ details }: { details: ParsedEventDetails }) {
   );
 }
 
+/** Adapt a CalendarEvent to ParsedEventDetails for the calendar/maps links. */
+function eventToDetails(event: CalendarEvent): ParsedEventDetails {
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (event.kind === KIND_CALENDAR_TIME) {
+    const d = new Date(Number(event.start) * 1000);
+    return {
+      date: fmtDate(d),
+      time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      location: event.location,
+      payments: [],
+      notes: [],
+    };
+  }
+  return {
+    date: fmtDate(new Date(`${event.start}T12:00:00`)),
+    location: event.location,
+    payments: [],
+    notes: [],
+  };
+}
+
+/** ISO date/time parts for prefilling the composer pickers from an event. */
+function eventStartIso(event: CalendarEvent): { date: string; time: string } {
+  if (event.kind === KIND_CALENDAR_TIME) {
+    const d = new Date(Number(event.start) * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return {
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    };
+  }
+  return { date: event.start, time: "" };
+}
+
+const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
+  { status: "accepted", emoji: "✅", label: "Going" },
+  { status: "tentative", emoji: "🤔", label: "Maybe" },
+  { status: "declined", emoji: "✕", label: "Can't go" },
+];
+
 function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
-  const { messages, isLoading, sendMessage, editMessage } = useChannelChat(channel);
+  const { messages, isLoading } = useChannelChat(channel);
   const { user } = useCurrentUser();
+  const {
+    events,
+    isLoading: calendarLoading,
+    rsvpsFor,
+    saveEvent,
+    deleteEvent,
+    setRsvp,
+  } = useChannelCalendar(channel, user?.pubkey);
   const [composerOpen, setComposerOpen] = useState(false);
 
   const isOwner = Boolean(
@@ -652,9 +708,38 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
   );
 
   const details = parseEventDetails(messages);
-  const hasAnyDetails = details.date || details.time || details.location;
 
-  // The message the owner edits: their oldest structured-details post.
+  // NIP-52 events (Armada-compatible) take precedence; the free-form text
+  // parsing stays as the fallback for legacy posts.
+  const upcoming = useMemo(() => events.filter((e) => isUpcoming(e)), [events]);
+  const featured = upcoming[0];
+  const alsoComing = upcoming.slice(1, 4);
+
+  // The event's description carries payment lines + extra info in the same
+  // line format as legacy text posts — parse it the same way.
+  const eventDetails = useMemo(
+    () =>
+      featured?.description
+        ? parseEventDetails([{ content: featured.description, createdAt: featured.createdAt }])
+        : undefined,
+    [featured]
+  );
+
+  // Payments prefer the event description; legacy text is the fallback.
+  const mergedPayments =
+    featured && eventDetails && eventDetails.payments.length > 0
+      ? eventDetails.payments
+      : details.payments;
+  const mergedAmount = (featured && eventDetails?.amount) || details.amount;
+  const paymentDetails: ParsedEventDetails = { ...details, amount: mergedAmount, payments: mergedPayments };
+  const notesToShow = featured
+    ? [...(eventDetails?.notes ?? []), ...details.notes]
+    : details.notes;
+
+  const hasAnyDetails = Boolean(featured) || details.date || details.time || details.location;
+  const locationToShow = featured?.location ?? (!featured ? details.location : undefined);
+
+  // The message the owner edits for payment info: their oldest structured post.
   const ownerMessage = useMemo(() => {
     if (!user) return undefined;
     return messages
@@ -663,7 +748,7 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
   }, [messages, user]);
 
   // True first load (no cached data yet) → skeletons, not a fake empty state.
-  if (isLoading && messages.length === 0) {
+  if ((isLoading || calendarLoading) && messages.length === 0 && events.length === 0) {
     return (
       <div className="space-y-3">
         <Skeleton className="h-36 w-full rounded-2xl" />
@@ -694,8 +779,64 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
         </Card>
       )}
 
-      {/* When — big gradient card with a faint calendar motif */}
-      {(details.date || details.time) && (
+      {/* Featured NIP-52 event (Armada-compatible) with RSVPs */}
+      {featured && (
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white p-5 shadow-md">
+          <img
+            src="/patterns/calendar.png"
+            alt=""
+            aria-hidden
+            className="absolute inset-0 size-full object-cover opacity-15 pointer-events-none select-none"
+          />
+          <div className="relative flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
+              <CalendarDays size={30} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Upcoming Event</p>
+              <p className="text-2xl font-bold leading-tight">{featured.title}</p>
+              <p className="text-lg text-white/90 flex items-center gap-1.5">
+                <Clock size={16} className="opacity-80" />
+                {formatCalendarEventWhen(featured)}
+              </p>
+            </div>
+          </div>
+          <div className="relative mt-4 flex flex-wrap gap-2">
+            <CalendarMenu details={eventToDetails(featured)} />
+          </div>
+          {user && (
+            <div className="relative mt-3 flex flex-wrap gap-2 border-t border-white/20 pt-3">
+              {RSVP_OPTIONS.map((opt) => {
+                const tally = rsvpsFor(featured);
+                const count = tally[opt.status].length;
+                const active = tally.mine === opt.status;
+                return (
+                  <button
+                    key={opt.status}
+                    onClick={() =>
+                      setRsvp(featured, opt.status, user.signer, user.pubkey).catch((e) =>
+                        console.error("RSVP failed:", e)
+                      )
+                    }
+                    aria-pressed={active}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ${
+                      active
+                        ? "bg-white text-red-700 shadow-sm"
+                        : "bg-white/15 text-white hover:bg-white/25 active:bg-white/30"
+                    }`}
+                  >
+                    {opt.emoji} {opt.label}
+                    {count > 0 && <span className={active ? "text-red-400" : "text-white/70"}>· {count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy text When card — only when no NIP-52 event exists */}
+      {!featured && (details.date || details.time) && (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white p-5 shadow-md">
           <img
             src="/patterns/calendar.png"
@@ -727,19 +868,36 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
       )}
 
       {/* Where — sky gradient card with map preview */}
-      {details.location && <WhereCard location={details.location} />}
+      {locationToShow && <WhereCard location={locationToShow} />}
+
+      {/* More upcoming events */}
+      {alsoComing.length > 0 && (
+        <Card className="border-orange-200 py-4 gap-2">
+          <CardHeader>
+            <CardTitle className="text-red-800 text-base">🗓️ Also coming up</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {alsoComing.map((e) => (
+              <div key={e.rumorId} className="flex items-center justify-between gap-2 rounded-lg bg-orange-50/60 px-3 py-2">
+                <p className="text-sm font-medium text-gray-900 truncate">{e.title}</p>
+                <p className="text-xs text-gray-500 flex-shrink-0">{formatCalendarEventWhen(e)}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chip In — payment methods for the host (green gradient) */}
-      {details.payments.length > 0 && <ChipInCard details={details} />}
+      {mergedPayments.length > 0 && <ChipInCard details={paymentDetails} />}
 
-      {/* Additional notes/messages that didn't parse as structured data */}
-      {details.notes.length > 0 && (
+      {/* Additional notes: event description + free-form messages */}
+      {notesToShow.length > 0 && (
         <Card className="border-orange-200 py-4 gap-2">
           <CardHeader>
             <CardTitle className="text-red-800 text-base">📢 Additional Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {details.notes.slice(-5).map((note, i) => (
+            {notesToShow.slice(-5).map((note, i) => (
               <div key={i} className="border-l-4 border-orange-300 bg-orange-50/60 rounded-r-lg px-3 py-2">
                 <p className="text-sm text-gray-900 whitespace-pre-wrap">{note}</p>
               </div>
@@ -754,15 +912,49 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
           {composerOpen ? (
             <EventDetailsComposer
               details={details}
+              featured={featured}
+              communityName={EVENT_CONFIG.name}
               ownerMessage={ownerMessage}
-              onSave={async (content) => {
-                if (ownerMessage) {
-                  await editMessage(ownerMessage.id, content, user.signer, user.pubkey);
-                } else {
-                  await sendMessage(content, user.signer, user.pubkey);
+              onSave={async (f) => {
+                // Everything lives on the NIP-52 event (what Armada
+                // reads/writes): title/start/location as tags, payment info +
+                // extra info as description lines (our parser's line format).
+                const startIso = f.date
+                  ? f.time
+                    ? new Date(`${f.date}T${f.time}`)
+                    : new Date(`${f.date}T12:00`)
+                  : null;
+                if (f.title.trim() && startIso && !isNaN(startIso.getTime())) {
+                  const descLines: string[] = [];
+                  if (f.amountMode === "fixed" && f.amount.trim()) descLines.push(`Amount: ${f.amount.trim()}`);
+                  if (f.cashapp.trim()) descLines.push(`CashApp: ${f.cashapp.trim()}`);
+                  if (f.venmo.trim()) descLines.push(`Venmo: ${f.venmo.trim()}`);
+                  if (f.lightning.trim()) descLines.push(`Lightning: ${f.lightning.trim()}`);
+                  if (f.extra.trim()) descLines.push(f.extra.trim());
+                  await saveEvent(
+                    {
+                      identifier: featured?.identifier ?? randomCalendarId(),
+                      kind: KIND_CALENDAR_TIME,
+                      title: f.title.trim(),
+                      start: String(Math.floor(startIso.getTime() / 1000)),
+                      startTzid: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                      location: f.location.trim() || undefined,
+                      description: descLines.join("\n") || undefined,
+                    },
+                    user.signer,
+                    user.pubkey
+                  );
                 }
                 setComposerOpen(false);
               }}
+              onDeleteEvent={
+                featured
+                  ? async () => {
+                      await deleteEvent(featured, user.signer, user.pubkey);
+                      setComposerOpen(false);
+                    }
+                  : undefined
+              }
               onCancel={() => setComposerOpen(false)}
             />
           ) : (
@@ -783,22 +975,43 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
 
 // ── Owner: event details composer ────────────────────────────────────────────
 
+/** Everything the composer collects, handed to the parent's save handler. */
+interface ComposerFields {
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  extra: string;
+  amountMode: "fixed" | "open";
+  amount: string;
+  cashapp: string;
+  venmo: string;
+  lightning: string;
+}
+
 function EventDetailsComposer({
   details,
+  featured,
+  communityName,
   ownerMessage,
   onSave,
+  onDeleteEvent,
   onCancel,
 }: {
   details: ParsedEventDetails;
+  featured: CalendarEvent | undefined;
+  communityName: string;
   ownerMessage: ChatMessage | undefined;
-  onSave: (content: string) => Promise<void>;
+  onSave: (fields: ComposerFields) => Promise<void>;
+  onDeleteEvent?: () => Promise<void>;
   onCancel: () => void;
 }) {
-  // Date/time state lives in ISO (native pickers); converted to friendly
-  // display strings on save.
-  const [date, setDate] = useState(() => friendlyDateToIso(details.date));
-  const [time, setTime] = useState(() => friendlyTimeToIso(details.time));
-  const [location, setLocation] = useState(details.location ?? "");
+  // Prefill from the NIP-52 event when there is one, else legacy text fields.
+  const startIso = featured ? eventStartIso(featured) : undefined;
+  const [title, setTitle] = useState(featured?.title ?? communityName);
+  const [date, setDate] = useState(() => startIso?.date ?? friendlyDateToIso(details.date));
+  const [time, setTime] = useState(() => startIso?.time ?? friendlyTimeToIso(details.time));
+  const [location, setLocation] = useState(featured?.location ?? details.location ?? "");
   // ONE suggested amount, however many payment methods are offered — or
   // open donations, where guests choose what to give.
   const [amountMode, setAmountMode] = useState<"fixed" | "open">(details.amount ? "fixed" : "open");
@@ -806,8 +1019,9 @@ function EventDetailsComposer({
   const [cashapp, setCashapp] = useState(details.payments.find((p) => p.method === "cashapp")?.id ?? "");
   const [venmo, setVenmo] = useState(details.payments.find((p) => p.method === "venmo")?.id ?? "");
   const [lightning, setLightning] = useState(details.payments.find((p) => p.method === "lightning")?.id ?? "");
-  // Extra info = the owner's own unstructured lines from their details post.
+  // Description = the event's description, else the owner's legacy extra lines.
   const [extra, setExtra] = useState(() => {
+    if (featured?.description) return featured.description;
     if (!ownerMessage) return "";
     return ownerMessage.content
       .split("\n")
@@ -816,26 +1030,28 @@ function EventDetailsComposer({
       .join("\n");
   });
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
-    const lines: string[] = [];
-    if (date) lines.push(`Date: ${isoToFriendlyDate(date)}`);
-    if (time) lines.push(`Time: ${isoToFriendlyTime(time)}`);
-    if (location.trim()) lines.push(`Location: ${location.trim()}`);
-    if (amountMode === "fixed" && amount.trim()) lines.push(`Amount: ${amount.trim()}`);
-    if (cashapp.trim()) lines.push(`CashApp: ${cashapp.trim()}`);
-    if (venmo.trim()) lines.push(`Venmo: ${venmo.trim()}`);
-    if (lightning.trim()) lines.push(`Lightning: ${lightning.trim()}`);
-    if (extra.trim()) lines.push(extra.trim());
-    if (lines.length === 0) return;
-
     setSaving(true);
     try {
-      await onSave(lines.join("\n"));
+      await onSave({ title, date, time, location, extra, amountMode, amount, cashapp, venmo, lightning });
     } catch (e) {
       console.error("Failed to save event details:", e);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDeleteEvent || !confirm("Delete this event? Guests will no longer see it.")) return;
+    setDeleting(true);
+    try {
+      await onDeleteEvent();
+    } catch (e) {
+      console.error("Failed to delete event:", e);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -847,6 +1063,11 @@ function EventDetailsComposer({
         <CardTitle className="text-red-800 text-base">✏️ Edit Event Details</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">Event title</label>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Summer Cookout" className={field} />
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Date</label>
@@ -908,17 +1129,28 @@ function EventDetailsComposer({
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1 block">Extra info (optional)</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">Description (optional)</label>
           <Input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Bring your own chairs!" className={field} />
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saving} className="bg-red-600 hover:bg-red-700 h-11 px-6">
+          <Button onClick={handleSave} disabled={saving || deleting} className="bg-red-600 hover:bg-red-700 h-11 px-6">
             {saving ? <Loader2 size={16} className="animate-spin" /> : "Save"}
           </Button>
-          <Button variant="outline" onClick={onCancel} disabled={saving} className="h-11">
+          <Button variant="outline" onClick={onCancel} disabled={saving || deleting} className="h-11">
             Cancel
           </Button>
+          {onDeleteEvent && (
+            <Button
+              variant="ghost"
+              onClick={handleDelete}
+              disabled={saving || deleting}
+              className="h-11 ml-auto text-gray-400 hover:text-red-600"
+            >
+              {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={15} className="mr-1" />}
+              Delete event
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

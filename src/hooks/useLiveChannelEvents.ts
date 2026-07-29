@@ -15,6 +15,7 @@ import { useNostr } from "@nostrify/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import { KIND_DELETE, KIND_EDIT, KIND_MESSAGE, KIND_REACTION, KIND_WRAP } from "@/concord-v2/lib/kinds";
+import { KIND_CALENDAR_DATE, KIND_CALENDAR_TIME, KIND_CALENDAR_RSVP } from "@/lib/calendar";
 import type { ChannelV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
 import { openChannelWraps } from "@/lib/concordHelpers";
@@ -107,6 +108,12 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
               // reactions can target chat messages or sign-up items alike.
               queryClient.invalidateQueries({ queryKey: chatKey });
               queryClient.invalidateQueries({ queryKey: boardKey });
+            } else if (
+              ev.kind === KIND_CALENDAR_DATE ||
+              ev.kind === KIND_CALENDAR_TIME ||
+              ev.kind === KIND_CALENDAR_RSVP
+            ) {
+              queryClient.invalidateQueries({ queryKey: ["channel-calendar", ch.idHex] });
             } else if (ev.kind === KIND_SIGNUP_ITEM) {
               queryClient.invalidateQueries({ queryKey: boardKey });
             }

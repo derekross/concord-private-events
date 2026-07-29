@@ -45,6 +45,17 @@ export const KIND_EDIT = 3302;
 export const KIND_ZAP = 9735;
 /** On-chain Bitcoin zap attribution (NIP-? §8333 shape, sealed as a rumor). */
 export const KIND_ONCHAIN_ZAP = 8333;
+/**
+ * Calendar events (CORD.md "Calendar Events"): NIP-52 date-based (31922) and
+ * time-based (31923) events, sealed as Chat Plane rumors. Not timeline messages
+ * — surfaced on the event details page. Addressable identity is (author, `d`)
+ * within the channel; RSVPs reference an event by its rumor id via an `e` tag
+ * (there is no `a`-coordinate for an unsigned rumor).
+ */
+export const KIND_CALENDAR_DATE = 31922;
+export const KIND_CALENDAR_TIME = 31923;
+/** Calendar RSVP (NIP-52 kind 31925), an `e`-referencing side event. */
+export const KIND_CALENDAR_RSVP = 31925;
 /** WebXDC peer signal. */
 export const KIND_WEBXDC = 3310;
 /** Typing indicator — ephemeral rumor (rides a 21059 wrap). */
