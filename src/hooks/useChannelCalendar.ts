@@ -23,6 +23,7 @@ import { fetchChannelActive } from "@/lib/concordHelpers";
 import {
   buildCalendarTags,
   foldCalendarRumors,
+  parseCalendarRumor,
   parseRsvpRumor,
   tallyRsvps,
   type CalendarEvent,
@@ -30,11 +31,15 @@ import {
   type RsvpStatus,
   type RsvpTally,
   type RsvpVote,
+  KIND_CALENDAR_DATE,
+  KIND_CALENDAR_TIME,
   KIND_CALENDAR_RSVP,
 } from "@/lib/calendar";
 
-/** How long an unconfirmed optimistic op survives refetches (ms). */
-const PENDING_TTL = 60_000;
+/** How long an unconfirmed optimistic op survives refetches (ms). RSVPs get
+ *  a wider window than messages: there's no "Sending…" affordance on the
+ *  chips, so a slow signer/relay vanishing after 60s reads as data loss. */
+const PENDING_TTL = 3 * 60_000;
 
 interface CalendarData {
   events: CalendarEvent[];
@@ -91,21 +96,42 @@ export function useChannelCalendar(
 
       const events = foldCalendarRumors(active).filter((e) => !tombstonesRef.current.has(e.rumorId));
 
+      // RSVPs reference an event's rumor id, but edits mint a NEW rumor id —
+      // so votes aimed at a superseded version would orphan. Map every
+      // calendar rumor id → its addressable coordinate, and re-point votes
+      // at the current holder of that coordinate.
+      const coordByRumorId = new Map<string, string>();
+      for (const ev of active) {
+        if (ev.kind !== KIND_CALENDAR_DATE && ev.kind !== KIND_CALENDAR_TIME) continue;
+        const parsed = parseCalendarRumor(ev);
+        if (parsed) {
+          coordByRumorId.set(parsed.rumorId, `${parsed.kind}:${parsed.author}:${parsed.identifier}`);
+        }
+      }
+      const currentByCoord = new Map<string, string>();
+      for (const e of events) {
+        currentByCoord.set(`${e.kind}:${e.author}:${e.identifier}`, e.rumorId);
+      }
+
       const votesByEvent: Record<string, RsvpVote[]> = {};
       for (const ev of active) {
         if (ev.kind !== KIND_CALENDAR_RSVP) continue;
         const parsed = parseRsvpRumor(ev);
         if (!parsed) continue;
-        (votesByEvent[parsed.target] ??= []).push(parsed.vote);
+        const coord = coordByRumorId.get(parsed.target);
+        const target = coord ? (currentByCoord.get(coord) ?? parsed.target) : parsed.target;
+        (votesByEvent[target] ??= []).push(parsed.vote);
       }
 
-      // Re-apply the viewer's unconfirmed RSVPs (drop once the relay copy
-      // of the same pubkey's vote shows up — tally picks the latest anyway).
+      // Re-apply the viewer's unconfirmed RSVPs. Drop the pending op once
+      // ANY vote from the viewer exists on relays for that target — the
+      // tally takes the latest by ms anyway, and rumor timestamps are
+      // tweaked (±2h), so an ms comparison here is unreliable.
       const viewer = viewerRef.current;
       if (viewer) {
         for (const [target, op] of pendingRsvpsRef.current) {
           const relayVotes = votesByEvent[target] ?? [];
-          if (relayVotes.some((v) => v.pubkey === viewer && v.ms >= op.vote.ms)) {
+          if (relayVotes.some((v) => v.pubkey === viewer)) {
             pendingRsvpsRef.current.delete(target);
             continue;
           }

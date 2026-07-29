@@ -857,12 +857,12 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-widest text-white/70 font-semibold">Upcoming Event</p>
               <p className="text-2xl font-bold leading-tight">{featured.title}</p>
-              <p className="text-lg text-white/90 flex items-center gap-1.5">
-                <Clock size={16} className="opacity-80" />
-                {formatCalendarEventWhen(featured)}
-              </p>
             </div>
           </div>
+          <p className="relative mt-2 flex items-center gap-1.5 text-lg text-white/90">
+            <Clock size={16} className="opacity-80 flex-shrink-0" />
+            {formatCalendarEventWhen(featured)}
+          </p>
           <div className="relative mt-4 flex flex-wrap gap-2">
             <CalendarMenu details={eventToDetails(featured)} />
           </div>
