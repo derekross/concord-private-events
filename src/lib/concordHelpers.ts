@@ -6,9 +6,13 @@
  */
 
 import { channelGroupKey } from "@/concord-v2/lib/derive";
+import { KIND_WRAP } from "@/concord-v2/lib/kinds";
 import { openWrap, type OpenedEvent } from "@/concord-v2/lib/stream";
 import type { CommunityV2, ChannelV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
+import type { QueryClient } from "@tanstack/react-query";
+import type { NRelay } from "@nostrify/nostrify";
+import { filterDeleted } from "@/lib/deleteUtils";
 
 /**
  * Derive the channel view for a community based on held keys.
@@ -127,4 +131,36 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Fetch + open + delete-filter a channel's wraps, DEDUPED across hooks.
+ *
+ * Chat, calendar, and sign-up hooks pointed at the same channel all need this
+ * exact result. Routing it through `queryClient.fetchQuery` means one relay
+ * round-trip (and one in-flight promise) per stale window instead of one per
+ * hook. The live subscription invalidates this key on every new event, so
+ * freshness is driven by pushes; the 10s stale window is only a dedupe
+ * horizon for the hooks' reconciliation polls.
+ */
+export function fetchChannelActive(
+  nostr: NRelay,
+  queryClient: QueryClient,
+  channel: ChannelV2,
+  signal?: AbortSignal,
+): Promise<{ active: OpenedEvent[]; deletedIds: Set<string> }> {
+  const authors = channel.streams.map((s) => s.group.pk);
+  return queryClient.fetchQuery({
+    queryKey: ["channel-active", channel.idHex],
+    queryFn: async () => {
+      const wraps = await nostr.query(
+        [{ kinds: [KIND_WRAP], authors, limit: 500 }],
+        { signal }
+      );
+      const opened = openChannelWraps(wraps as NostrEvent[], channel);
+      return filterDeleted(opened);
+    },
+    staleTime: 10_000,
+    gcTime: 5 * 60 * 1000,
+  });
 }

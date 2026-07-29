@@ -14,7 +14,7 @@
 import { useNostr } from "@nostrify/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { KIND_WRAP, KIND_EDIT, KIND_DELETE } from "@/concord-v2/lib/kinds";
+import { KIND_EDIT, KIND_DELETE } from "@/concord-v2/lib/kinds";
 import {
   buildRumor,
   channelBindingTags,
@@ -22,10 +22,8 @@ import {
   wrapSeal,
   type StreamSigner,
 } from "@/concord-v2/lib/stream";
-import type { NostrEvent } from "nostr-tools/pure";
 import type { ChannelV2 } from "@/concord-v2/lib/types";
-import { openChannelWraps } from "@/lib/concordHelpers";
-import { filterDeleted } from "@/lib/deleteUtils";
+import { fetchChannelActive } from "@/lib/concordHelpers";
 import {
   KIND_SIGNUP_ITEM,
   parseSignUpItem,
@@ -81,14 +79,9 @@ export function useSignUpBoard(channel: ChannelV2 | undefined) {
       const ch = channelRef.current;
       if (!ch) return [];
 
-      const authors = ch.streams.map((s) => s.group.pk);
-      const wraps = await nostr.query(
-        [{ kinds: [KIND_WRAP], authors, limit: 500 }],
-        { signal }
-      );
-
-      const opened = openChannelWraps(wraps as NostrEvent[], ch);
-      const { active, deletedIds } = filterDeleted(opened);
+      // Shared deduped wrap fetch (one relay round-trip across all hooks
+      // on this channel, invalidated by the live subscription).
+      const { active, deletedIds } = await fetchChannelActive(nostr, queryClient, ch, signal);
 
       // Collect items and edits (excluding deleted)
       const itemMap = new Map<string, SignUpItem>();

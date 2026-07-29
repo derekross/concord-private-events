@@ -21,7 +21,10 @@ export interface EventConfig {
   communityOwner: string;
   /** Relays to query for community events. */
   relays: string[];
-  /** Channel names the app expects to find in the community. */
+  /** Preferred channel names. NO channel setup is required — every app
+   *  feature (chat, events, RSVPs, sign-up board) works inside a single
+   *  "general" channel, since kinds distinguish the content. Dedicated
+   *  channels with these names take priority when they exist. */
   channels: {
     eventInfo: string;
     signUp: string;

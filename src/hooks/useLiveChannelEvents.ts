@@ -76,6 +76,10 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
             const chatKey = ["channel-chat", ch.idHex] as const;
             const boardKey = ["sign-up-board", ch.idHex] as const;
 
+            // The shared wrap fetch is stale the moment any new event lands —
+            // every hook's next refetch must see it.
+            queryClient.invalidateQueries({ queryKey: ["channel-active", ch.idHex] });
+
             if (ev.kind === KIND_MESSAGE) {
               const imeta = ev.tags?.filter((t: string[]) => t[0] === "imeta") ?? [];
               queryClient.setQueryData<ChatMessage[]>(chatKey, (old = []) => {

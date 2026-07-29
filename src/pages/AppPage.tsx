@@ -683,6 +683,14 @@ function eventStartIso(event: CalendarEvent): { date: string; time: string } {
   return { date: event.start, time: "" };
 }
 
+/** ISO time part of an event's end, for prefilling the composer ("" if none). */
+function eventEndTimeIso(event: CalendarEvent): string {
+  if (event.kind !== KIND_CALENDAR_TIME || !event.end) return "";
+  const d = new Date(Number(event.end) * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
   { status: "accepted", emoji: "✅", label: "Going" },
   { status: "tentative", emoji: "🤔", label: "Maybe" },
@@ -925,6 +933,11 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
                     : new Date(`${f.date}T12:00`)
                   : null;
                 if (f.title.trim() && startIso && !isNaN(startIso.getTime())) {
+                  const endIso = f.date && f.endTime ? new Date(`${f.date}T${f.endTime}`) : null;
+                  const end =
+                    endIso && !isNaN(endIso.getTime()) && endIso.getTime() > startIso.getTime()
+                      ? String(Math.floor(endIso.getTime() / 1000))
+                      : undefined;
                   const descLines: string[] = [];
                   if (f.amountMode === "fixed" && f.amount.trim()) descLines.push(`Amount: ${f.amount.trim()}`);
                   if (f.cashapp.trim()) descLines.push(`CashApp: ${f.cashapp.trim()}`);
@@ -937,6 +950,7 @@ function EventDetailsTab({ channel }: { channel: ChannelV2 | undefined }) {
                       kind: KIND_CALENDAR_TIME,
                       title: f.title.trim(),
                       start: String(Math.floor(startIso.getTime() / 1000)),
+                      end,
                       startTzid: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       location: f.location.trim() || undefined,
                       description: descLines.join("\n") || undefined,
@@ -980,6 +994,7 @@ interface ComposerFields {
   title: string;
   date: string;
   time: string;
+  endTime: string;
   location: string;
   extra: string;
   amountMode: "fixed" | "open";
@@ -1011,6 +1026,7 @@ function EventDetailsComposer({
   const [title, setTitle] = useState(featured?.title ?? communityName);
   const [date, setDate] = useState(() => startIso?.date ?? friendlyDateToIso(details.date));
   const [time, setTime] = useState(() => startIso?.time ?? friendlyTimeToIso(details.time));
+  const [endTime, setEndTime] = useState(() => (featured ? eventEndTimeIso(featured) : ""));
   const [location, setLocation] = useState(featured?.location ?? details.location ?? "");
   // ONE suggested amount, however many payment methods are offered — or
   // open donations, where guests choose what to give.
@@ -1035,7 +1051,7 @@ function EventDetailsComposer({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave({ title, date, time, location, extra, amountMode, amount, cashapp, venmo, lightning });
+      await onSave({ title, date, time, endTime, location, extra, amountMode, amount, cashapp, venmo, lightning });
     } catch (e) {
       console.error("Failed to save event details:", e);
     } finally {
@@ -1068,16 +1084,20 @@ function EventDetailsComposer({
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Summer Cookout" className={field} />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="col-span-2 sm:col-span-1">
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Date</label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">Time</label>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">Start</label>
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
           </div>
           <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1 block">End (optional)</label>
+            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={field} />
+          </div>
+          <div className="col-span-2 sm:col-span-1">
             <label className="text-xs font-semibold text-gray-600 mb-1 block">Location</label>
             <LocationAutocomplete value={location} onChange={setLocation} className={field} />
           </div>

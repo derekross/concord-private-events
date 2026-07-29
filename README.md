@@ -48,8 +48,11 @@ npm run build    # Production build → dist/
 
 ## Setup: point it at your community
 
-1. **Create the community** in [Armada](https://armada.buzz) with three
-   channels: `event-info`, `sign-up`, `chat`.
+1. **Create the community** in [Armada](https://armada.buzz). No channel
+   setup needed — everything (chat, NIP-52 events + RSVPs, sign-up board)
+   works inside the default `general` channel. If you prefer dedicated
+   channels, name them `event-info`, `sign-up`, and `chat` and they'll be
+   used instead.
 2. Copy the **community ID** (hex) and your **owner pubkey** (hex) into
    `src/lib/eventConfig.ts`:
 

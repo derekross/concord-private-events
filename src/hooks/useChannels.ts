@@ -1,8 +1,14 @@
 /**
  * useChannels — derive channel objects from the community + control plane.
  *
- * Returns a map of channel-name → ChannelV2 so the app can find channels
- * by their configured names (event-info, sign-up, chat).
+ * One channel can carry everything the app does: kinds distinguish chat
+ * messages (9), calendar events (31922/31923), RSVPs (31925), and sign-up
+ * items (31800) — channels are only organizational. So a community needs NO
+ * channel setup: every app slot falls back to the "general" channel (the
+ * default every Armada community has). Priority per slot: its dedicated
+ * configured name → "general" → the chat channel → the first channel, so
+ * communities that still have dedicated event-info / sign-up channels keep
+ * working unchanged.
  */
 
 import { useMemo } from "react";
@@ -17,12 +23,12 @@ export interface ChannelsResult {
   channels: ChannelV2[];
   /** Map of channel-name → ChannelV2 for quick lookup. */
   channelsByName: Map<string, ChannelV2>;
-  /** Convenience: specific channels from eventConfig. */
+  /** Event details channel: `eventInfo` if it exists, else the chat channel. */
   eventInfoChannel: ChannelV2 | undefined;
+  /** Sign-up channel: `signUp` if it exists, else the chat channel. */
   signUpChannel: ChannelV2 | undefined;
+  /** Chat channel (configured name, else "general", else the first channel). */
   chatChannel: ChannelV2 | undefined;
-  /** The general channel (fallback for event info). */
-  generalChannel: ChannelV2 | undefined;
 }
 
 export function useChannels(
@@ -37,7 +43,6 @@ export function useChannels(
         eventInfoChannel: undefined,
         signUpChannel: undefined,
         chatChannel: undefined,
-        generalChannel: undefined,
       };
     }
 
@@ -47,10 +52,13 @@ export function useChannels(
       channelsByName.set(ch.name, ch);
     }
 
-    const eventInfoChannel = channelsByName.get(EVENT_CONFIG.channels.eventInfo) ?? channelsByName.get("general");
-    const signUpChannel = channelsByName.get(EVENT_CONFIG.channels.signUp);
-    const chatChannel = channelsByName.get(EVENT_CONFIG.channels.chat) ?? channelsByName.get("general");
     const generalChannel = channelsByName.get("general");
+    const chatChannel =
+      channelsByName.get(EVENT_CONFIG.channels.chat) ?? generalChannel ?? channels[0];
+    const eventInfoChannel =
+      channelsByName.get(EVENT_CONFIG.channels.eventInfo) ?? generalChannel ?? chatChannel;
+    const signUpChannel =
+      channelsByName.get(EVENT_CONFIG.channels.signUp) ?? generalChannel ?? chatChannel;
 
     return {
       channels,
@@ -58,7 +66,6 @@ export function useChannels(
       eventInfoChannel,
       signUpChannel,
       chatChannel,
-      generalChannel,
     };
   }, [community, folded]);
 }
