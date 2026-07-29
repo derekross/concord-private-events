@@ -58,7 +58,15 @@ export function useCustomCategories() {
     return true;
   };
 
-  return { customs, addCustomCategory };
+  const removeCustomCategory = (name: string) => {
+    const key = name.toLowerCase();
+    const next = customs.filter((c) => c.name.toLowerCase() !== key);
+    if (next.length === customs.length) return;
+    setCustoms(next);
+    persist(next);
+  };
+
+  return { customs, addCustomCategory, removeCustomCategory };
 }
 
 /** Emoji for any category key: built-in → custom → fallback pin. */

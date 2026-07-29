@@ -1293,7 +1293,7 @@ function ClaimedBy({ pubkey }: { pubkey: string }) {
 function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned?: Set<string> }) {
   const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel, banned);
   const { user } = useCurrentUser();
-  const { customs, addCustomCategory } = useCustomCategories();
+  const { customs, addCustomCategory, removeCustomCategory } = useCustomCategories();
   const [newItemName, setNewItemName] = useState("");
   const [newItemCategory, setNewItemCategory] = useState<string>("");
   const [customOpen, setCustomOpen] = useState(false);
@@ -1387,19 +1387,34 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
           <div className="flex flex-wrap gap-1.5">
             {chipCategories.map((cat) => {
               const selected = effectiveCategory === cat;
+              const custom = customs.find((c) => c.name.toLowerCase() === cat.toLowerCase());
               return (
-                <button
-                  key={cat}
-                  onClick={() => setNewItemCategory(cat)}
-                  aria-pressed={selected}
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    selected
-                      ? "bg-white text-red-700 shadow-sm"
-                      : "bg-white/15 border border-white/25 text-white hover:bg-white/25 active:bg-white/30"
-                  }`}
-                >
-                  {categoryLabel(cat, customs)}
-                </button>
+                <span key={cat} className="relative inline-flex">
+                  <button
+                    onClick={() => setNewItemCategory(cat)}
+                    aria-pressed={selected}
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      selected
+                        ? "bg-white text-red-700 shadow-sm"
+                        : "bg-white/15 border border-white/25 text-white hover:bg-white/25 active:bg-white/30"
+                    }`}
+                  >
+                    {categoryLabel(cat, customs)}
+                  </button>
+                  {custom && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCustomCategory(custom.name);
+                      }}
+                      aria-label={`Remove ${custom.name} category`}
+                      title={`Remove ${custom.name}`}
+                      className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border border-red-200 bg-white text-[9px] font-bold text-red-700 shadow-sm hover:bg-red-50"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
               );
             })}
             <button
