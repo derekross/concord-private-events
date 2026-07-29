@@ -1204,7 +1204,7 @@ function EventDetailsComposer({
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1 block">Description (optional)</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1 block">Additional information (optional)</label>
           <Input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Bring your own chairs!" className={field} />
         </div>
 
