@@ -16,7 +16,7 @@ import { useMemo } from "react";
 import { channelsView as channelsViewLib } from "@/concord-v2/lib/community";
 import type { ChannelV2, CommunityV2 } from "@/concord-v2/lib/types";
 import type { FoldedControl } from "@/concord-v2/lib/control";
-import { EVENT_CONFIG } from "@/lib/eventConfig";
+import { CHANNEL_PREFERENCES } from "@/lib/eventConfig";
 
 export interface ChannelsResult {
   /** All channels the member can read. */
@@ -57,11 +57,11 @@ export function useChannels(
 
     const generalChannel = byName("general");
     const chatChannel =
-      byName(EVENT_CONFIG.channels.chat) ?? generalChannel ?? channels[0];
+      byName(CHANNEL_PREFERENCES.chat) ?? generalChannel ?? channels[0];
     const eventInfoChannel =
-      byName(EVENT_CONFIG.channels.eventInfo) ?? generalChannel ?? chatChannel;
+      byName(CHANNEL_PREFERENCES.eventInfo) ?? generalChannel ?? chatChannel;
     const signUpChannel =
-      byName(EVENT_CONFIG.channels.signUp) ?? generalChannel ?? chatChannel;
+      byName(CHANNEL_PREFERENCES.signUp) ?? generalChannel ?? chatChannel;
 
     return {
       channels,

@@ -308,7 +308,13 @@ export function isoToFriendlyTime(iso: string): string {
  * calendar app). Serve as a blob download — data: URLs are unreliable in
  * iOS Safari.
  */
-export function icsContent(details: ParsedEventDetails, title: string): string | null {
+/**
+ * @param uid Stable per-event identifier. RFC 5545 requires a UID that is
+ *   globally unique AND stable across updates: with a fresh value each call,
+ *   re-adding an event creates a duplicate in the calendar instead of
+ *   updating the existing entry.
+ */
+export function icsContent(details: ParsedEventDetails, title: string, uid?: string): string | null {
   if (!details.date) return null;
 
   const dateStr = details.date;
@@ -329,7 +335,7 @@ export function icsContent(details: ParsedEventDetails, title: string): string |
     "VERSION:2.0",
     "PRODID:-//Concord Private Events//EN",
     "BEGIN:VEVENT",
-    `UID:${Date.now()}@seafood-boil`,
+    `UID:${uid ?? `${dt}-${encodeURIComponent(title)}`}@concord-events`,
     `DTSTAMP:${dt}`,
     `DTSTART:${dt}`,
     `DTEND:${dtEnd}`,

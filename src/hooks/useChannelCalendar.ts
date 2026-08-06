@@ -8,6 +8,7 @@
  */
 
 import { useNostr } from "@nostrify/react";
+import { useCommunityRelays } from "@/contexts/CommunityRelaysContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { KIND_DELETE } from "@/concord-v2/lib/kinds";
@@ -52,6 +53,7 @@ export function useChannelCalendar(
   banned?: Set<string>,
 ) {
   const { nostr } = useNostr();
+  const relays = useCommunityRelays();
   const queryClient = useQueryClient();
   const channelRef = useRef(channel);
   useEffect(() => {
@@ -84,7 +86,7 @@ export function useChannelCalendar(
 
       // Shared deduped wrap fetch (one relay round-trip across all hooks
       // on this channel, invalidated by the live subscription).
-      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal, bannedRef.current);
+      const { active } = await fetchChannelActive(nostr, queryClient, ch, signal, bannedRef.current, relays);
 
       const now = Date.now();
       for (const [id, expires] of tombstonesRef.current) {
@@ -165,9 +167,9 @@ export function useChannelCalendar(
     ) => {
       const seal = await sealRumor(rumor, 20013, ch.current.group, signer);
       const wrap = wrapSeal(seal, ch.current.group);
-      await nostr.event(wrap);
+      await nostr.event(wrap, { relays });
     },
-    [nostr]
+    [nostr, relays]
   );
 
   /** Create or update (same `d`) a calendar event. */
