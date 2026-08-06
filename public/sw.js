@@ -13,9 +13,9 @@
  * are purged on activate.
  */
 
-const VERSION = "v2";
-const SHELL_CACHE = `seafood-boil-shell-${VERSION}`;
-const RUNTIME_CACHE = `seafood-boil-runtime-${VERSION}`;
+const VERSION = "v3";
+const SHELL_CACHE = `concord-events-shell-${VERSION}`;
+const RUNTIME_CACHE = `concord-events-runtime-${VERSION}`;
 
 const SHELL_URLS = ["/", "/index.html", "/manifest.webmanifest", "/favicon-32.png"];
 

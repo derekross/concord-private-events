@@ -9,7 +9,7 @@
   "orientation": "portrait",
   "background_color": "#fff7ed",
   "theme_color": "#dc2626",
-  "categories": ["social", "food", "lifestyle"],
+  "categories": ["social", "productivity", "lifestyle"],
   "icons": [
     {
       "src": "/icons/icon-192.png",

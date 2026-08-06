@@ -1,34 +1,44 @@
 /**
- * useCommunityMembership — check if the current user is a member of the
- * configured Concord V2 community.
+ * useCommunityMembership — is the current user a member of this community,
+ * and are they its owner?
  *
- * Uses useCommunityData: if the community data loads (the user has keys
- * for it in their Community List), they're a member. The owner is always
- * a member by definition.
+ * Membership means "holds usable keys": the community rehydrated out of the
+ * user's own encrypted Community List. Ownership compares against
+ * `community.owner`, which rehydrateCommunity has already checked with
+ * verifyCommunityId (community_id == H(owner || owner_salt)).
+ *
+ * Both facts therefore come from the protocol, never from client config. That
+ * matters: the previous version treated a hardcoded pubkey as "always a
+ * member", which is an authorization check a deployment config has no business
+ * making. It also bought nothing — an owner with no list entry has no keys, so
+ * the control plane stays disabled and every tab renders empty anyway.
+ *
+ * The UI gate this feeds is convenience only. The real boundary is that
+ * without list keys nothing decrypts.
  */
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCommunityData } from "@/hooks/useCommunityData";
-import { EVENT_CONFIG } from "@/lib/eventConfig";
 
-export function useCommunityMembership(_pubkey: string | undefined) {
+export interface CommunityMembershipResult {
+  isMember: boolean;
+  isOwner: boolean;
+  /** Removed by a rekey that carried no blob for us: listed, but read-only. */
+  isExcluded: boolean;
+  isLoading: boolean;
+}
+
+export function useCommunityMembership(
+  communityId: string | undefined
+): CommunityMembershipResult {
   const { user } = useCurrentUser();
-  const { community, isLoading } = useCommunityData();
+  const { community, isExcluded, isLoading } = useCommunityData(communityId);
 
-  // The owner is always a member (case-insensitive hex compare)
-  const ownerHex = EVENT_CONFIG.communityOwner.toLowerCase();
-  const userHex = user?.pubkey?.toLowerCase();
-  const isOwner = userHex === ownerHex;
+  const isMember = Boolean(community);
+  const isOwner = Boolean(
+    community && user?.pubkey &&
+    user.pubkey.toLowerCase() === community.owner.toLowerCase()
+  );
 
-  // If we successfully loaded the community object, the user has keys → member
-  // While loading, we don't know yet — return false but isLoading=true so
-  // callers can gate on isLoading rather than getting a false negative.
-  const isMember = Boolean(community) || isOwner;
-
-  return {
-    data: isMember,
-    // Stay loading while community data loads AND we're not the owner
-    // (owner can skip the wait). This prevents premature redirects.
-    isLoading: isLoading && !isOwner,
-  };
+  return { isMember, isOwner, isExcluded, isLoading };
 }

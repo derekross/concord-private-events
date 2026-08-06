@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCommunityMembership } from "@/hooks/useCommunityMembership";
 import { useCommunityData } from "@/hooks/useCommunityData";
+import { rememberLastCommunity } from "@/hooks/useCommunityMemberships";
+import { CommunityRelaysContext, resolveCommunityRelays } from "@/contexts/CommunityRelaysContext";
 import { useControlPlane } from "@/hooks/useControlPlane";
 import { useChannels } from "@/hooks/useChannels";
-import { EVENT_CONFIG, SIGN_UP_CATEGORIES } from "@/lib/eventConfig";
+import { APP_BRANDING, ARMADA_BASE } from "@/lib/eventConfig";
 import { useCustomCategories, categoryLabel, categoryEmoji, EMOJI_CHOICES } from "@/lib/customCategories";
 import type { SignUpItem } from "@/lib/signUpModel";
 import {
@@ -82,9 +84,10 @@ const TAB_ITEMS: { value: Tab; emoji: string; label: string }[] = [
 export default function AppPage() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const { communityId } = useParams<{ communityId: string }>();
 
   // Load the community from the user's Community List
-  const { community, isLoading: communityLoading } = useCommunityData();
+  const { community, isLoading: communityLoading } = useCommunityData(communityId);
 
   // Fetch and fold the control plane to discover channels
   const { folded, isLoading: controlLoading } = useControlPlane(community);
@@ -93,17 +96,33 @@ export default function AppPage() {
   const { channels, eventInfoChannel, signUpChannel, chatChannel } = useChannels(community, folded);
 
   // Check membership (depends on community data loading)
-  const { data: isMember, isLoading: membershipLoading } = useCommunityMembership(user?.pubkey);
+  const { isMember, isLoading: membershipLoading } = useCommunityMembership(communityId);
+
+  // Relays that serve THIS community, unioned with the app's. Provided to
+  // the whole subtree so channel fetches, the live subscription and publishes
+  // all reach a community hosted outside our default relay set.
+  const communityRelays = useMemo(
+    () => resolveCommunityRelays(community),
+    [community]
+  );
+
+  // Sort hint for the picker only — never a source of truth for which
+  // community is open, so two tabs can hold different communities safely.
+  useEffect(() => {
+    if (community) rememberLastCommunity(community.idHex);
+  }, [community]);
 
   const [tab, setTab] = useState<Tab>("details");
 
   // The app is named after its community, not hardcoded branding.
-  const communityName = folded?.metadata?.name ?? EVENT_CONFIG.name;
+  // folded metadata is authoritative; community.name is the invite-bundle
+  // preview name and paints instantly; app branding is the last resort.
+  const communityName = folded?.metadata?.name ?? community?.name ?? APP_BRANDING.name;
   useSeoMeta({ title: communityName });
 
   // Live subscription: new chat messages land in the query cache the moment
   // they hit a relay; edits/deletes/sign-up changes trigger instant refolds.
-  useLiveChannelEvents(channels);
+  useLiveChannelEvents(channels, communityRelays);
 
   // Redirects live in effects — never navigate during render.
   useEffect(() => {
@@ -111,7 +130,7 @@ export default function AppPage() {
   }, [user, navigate]);
 
   useEffect(() => {
-    if (!membershipLoading && !isMember && EVENT_CONFIG.communityId) navigate("/");
+    if (!membershipLoading && !isMember) navigate("/");
   }, [membershipLoading, isMember, navigate]);
 
   if (!user) return null;
@@ -121,7 +140,7 @@ export default function AppPage() {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
         <div className="text-center space-y-3">
-          <div className="text-4xl animate-bounce">{EVENT_CONFIG.emoji}</div>
+          <div className="text-4xl animate-bounce">{APP_BRANDING.emoji}</div>
           <p className="text-sm text-gray-600">Loading community...</p>
         </div>
       </div>
@@ -144,8 +163,10 @@ export default function AppPage() {
     );
   }
 
-  // Not a member → landing (effect above performs the navigation)
-  if (!isMember && EVENT_CONFIG.communityId) return null;
+  // Not a member, or no keys for this community → landing (effect above
+  // performs the navigation). Narrowing on `community` here is what lets the
+  // tabs below take a non-optional ownerHex.
+  if (!isMember || !community) return null;
 
   return (
     <div className="min-h-dvh bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50">
@@ -160,6 +181,7 @@ export default function AppPage() {
           (56px header + 144/176px hero + 16px gap), bottom padding clears
           the mobile nav bar. */}
       <main className="px-2 pb-28 sm:pb-6 pt-[calc(216px+env(safe-area-inset-top))] sm:pt-[calc(248px+env(safe-area-inset-top))]">
+        <CommunityRelaysContext.Provider value={communityRelays}>
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           {/* Desktop tabs (mobile gets the bottom nav bar) */}
           <TabsList className="grid w-full grid-cols-3 mb-4 max-sm:hidden">
@@ -173,17 +195,23 @@ export default function AppPage() {
           {/* forceMount keeps every tab's query alive from first render:
               data loads in the background and tab switches are instant. */}
           <TabsContent value="details" forceMount className="data-[state=inactive]:hidden">
-            <EventDetailsTab channel={eventInfoChannel} banned={folded?.banned} />
+            <EventDetailsTab
+              channel={eventInfoChannel}
+              banned={folded?.banned}
+              communityName={communityName}
+              ownerHex={community.owner}
+            />
           </TabsContent>
 
           <TabsContent value="signup" forceMount className="data-[state=inactive]:hidden">
-            <SignUpTab channel={signUpChannel} banned={folded?.banned} />
+            <SignUpTab channel={signUpChannel} banned={folded?.banned} communityId={community.idHex} />
           </TabsContent>
 
           <TabsContent value="chat" forceMount className="data-[state=inactive]:hidden">
-            <ChatTab channel={chatChannel} active={tab === "chat"} banned={folded?.banned} />
+            <ChatTab channel={chatChannel} active={tab === "chat"} banned={folded?.banned} communityId={community.idHex} />
           </TabsContent>
         </Tabs>
+        </CommunityRelaysContext.Provider>
       </main>
 
       <MobileTabBar tab={tab} onChange={setTab} />
@@ -203,7 +231,7 @@ function AppHeader({ name, metadata }: { name: string; metadata?: CommunityMetad
           {icon ? (
             <img src={icon} alt="" className="size-8 rounded-lg object-cover flex-shrink-0" />
           ) : (
-            <span className="text-2xl flex-shrink-0">{EVENT_CONFIG.emoji}</span>
+            <span className="text-2xl flex-shrink-0">{APP_BRANDING.emoji}</span>
           )}
           <h1 className="text-lg font-bold text-red-800 truncate">{name}</h1>
         </div>
@@ -255,7 +283,7 @@ function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
   const banner = useDecryptedImage(metadata?.banner);
   const [expanded, setExpanded] = useState(false);
 
-  const description = metadata?.description ?? EVENT_CONFIG.subtitle;
+  const description = metadata?.description ?? APP_BRANDING.subtitle;
   // Offer expand/collapse only for genuinely long descriptions.
   const isLong = (description?.length ?? 0) > 140;
 
@@ -294,9 +322,9 @@ function CommunityHero({ metadata }: { metadata?: CommunityMetadata }) {
 
 // ── Calendar / Maps pickers (device-aware) ───────────────────────────────────
 
-function CalendarMenu({ details }: { details: ParsedEventDetails }) {
-  const gcalUrl = googleCalendarUrl(details, EVENT_CONFIG.name);
-  const ics = icsContent(details, EVENT_CONFIG.name);
+function CalendarMenu({ details, communityName }: { details: ParsedEventDetails; communityName: string }) {
+  const gcalUrl = googleCalendarUrl(details, communityName);
+  const ics = icsContent(details, communityName);
 
   // Blob URL for the .ics — data: URLs are unreliable in iOS Safari.
   const icsUrl = useMemo(
@@ -712,7 +740,24 @@ const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
   { status: "declined", emoji: "✕", label: "Can't go" },
 ];
 
-function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; banned?: Set<string> }) {
+function EventDetailsTab({
+  channel,
+  banned,
+  communityName,
+  ownerHex,
+}: {
+  channel: ChannelV2 | undefined;
+  banned?: Set<string>;
+  /** Real community name (folded metadata), for calendar entries + composer. */
+  communityName: string;
+  /**
+   * The community owner, from the salt-verified `community.owner`. REQUIRED,
+   * and deliberately not optional: every use below filters on it, and an
+   * absent value used to fall back to "trust every message", which let any
+   * member post a `CashApp:` line and hijack the Chip In card.
+   */
+  ownerHex: string;
+}) {
   const { messages, isLoading } = useChannelChat(channel, undefined, banned);
   const { user } = useCurrentUser();
   const {
@@ -725,20 +770,16 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
   } = useChannelCalendar(channel, user?.pubkey, banned);
   const [composerOpen, setComposerOpen] = useState(false);
 
-  const isOwner = Boolean(
-    user?.pubkey && EVENT_CONFIG.communityOwner &&
-    user.pubkey.toLowerCase() === EVENT_CONFIG.communityOwner.toLowerCase()
-  );
+  const ownerPubkey = ownerHex.toLowerCase();
+  const isOwner = Boolean(user?.pubkey && user.pubkey.toLowerCase() === ownerPubkey);
 
   // Text-based event info is host-only. In a shared channel this keeps
   // regular chat out of Additional Info — and stops any member hijacking
   // the When/Chip In cards by posting "Date:"/"CashApp:" lines.
-  const ownerPubkey = EVENT_CONFIG.communityOwner?.toLowerCase();
+  // Filtering is unconditional: there is no "no owner known" fallback, because
+  // falling back to every message is precisely the hijack this prevents.
   const infoMessages = useMemo(
-    () =>
-      ownerPubkey
-        ? messages.filter((m) => m.pubkey.toLowerCase() === ownerPubkey)
-        : messages,
+    () => messages.filter((m) => m.pubkey.toLowerCase() === ownerPubkey),
     [messages, ownerPubkey]
   );
   const details = parseEventDetails(infoMessages);
@@ -748,24 +789,22 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
   // win the featured slot; member-created events list under "Also coming up".
   const upcoming = useMemo(() => {
     const up = events.filter((e) => isUpcoming(e));
-    if (ownerPubkey) {
-      up.sort((a, b) => {
-        const aOwner = a.author.toLowerCase() === ownerPubkey ? 0 : 1;
-        const bOwner = b.author.toLowerCase() === ownerPubkey ? 0 : 1;
-        return aOwner - bOwner;
-      });
-    }
+    up.sort((a, b) => {
+      const aOwner = a.author.toLowerCase() === ownerPubkey ? 0 : 1;
+      const bOwner = b.author.toLowerCase() === ownerPubkey ? 0 : 1;
+      return aOwner - bOwner;
+    });
     return up;
   }, [events, ownerPubkey]);
   const featured = upcoming[0];
   const alsoComing = upcoming.slice(1, 4);
   // The event the HOST edits — addressable identity is (author, d), so the
   // composer must target the owner's own event, never a member's.
+  // Never fall back to upcoming[0]: addressable identity is (author, d), so
+  // targeting a member's event would make the host's save fork a new event
+  // instead of editing their own.
   const ownerEvent = useMemo(
-    () =>
-      ownerPubkey
-        ? upcoming.find((e) => e.author.toLowerCase() === ownerPubkey)
-        : upcoming[0],
+    () => upcoming.find((e) => e.author.toLowerCase() === ownerPubkey),
     [upcoming, ownerPubkey]
   );
 
@@ -835,7 +874,7 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
       {!hasAnyDetails && details.payments.length === 0 && (
         <Card className="border-dashed border-orange-300">
           <CardContent className="py-10 px-4 text-center">
-            <div className="text-5xl mb-3">{EVENT_CONFIG.emoji}</div>
+            <div className="text-5xl mb-3">{APP_BRANDING.emoji}</div>
             {isOwner ? (
               <>
                 <p className="text-base font-medium text-gray-700 mb-1">You're the host — add the details!</p>
@@ -875,7 +914,7 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
             {formatCalendarEventWhen(featured)}
           </p>
           <div className="relative mt-4 flex flex-wrap gap-2">
-            <CalendarMenu details={eventToDetails(featured)} />
+            <CalendarMenu details={eventToDetails(featured)} communityName={communityName} />
           </div>
           {user && (
             <div className="relative mt-3 flex flex-wrap gap-2 border-t border-white/20 pt-3">
@@ -935,7 +974,7 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
             </div>
           </div>
           <div className="relative mt-4 flex flex-wrap gap-2">
-            <CalendarMenu details={details} />
+            <CalendarMenu details={details} communityName={communityName} />
           </div>
         </div>
       )}
@@ -986,7 +1025,7 @@ function EventDetailsTab({ channel, banned }: { channel: ChannelV2 | undefined; 
             <EventDetailsComposer
               details={details}
               featured={ownerEvent}
-              communityName={EVENT_CONFIG.name}
+              communityName={communityName}
               ownerMessage={ownerMessage}
               onSave={async (f) => {
                 // Everything lives on the NIP-52 event (what Armada
@@ -1290,10 +1329,10 @@ function ClaimedBy({ pubkey }: { pubkey: string }) {
   );
 }
 
-function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned?: Set<string> }) {
+function SignUpTab({ channel, banned, communityId }: { channel: ChannelV2 | undefined; banned?: Set<string>; communityId: string }) {
   const { items, isLoading, addItem, claimItem, unclaimItem, deleteItem } = useSignUpBoard(channel, banned);
   const { user } = useCurrentUser();
-  const { customs, addCustomCategory, removeCustomCategory } = useCustomCategories();
+  const { customs, addCustomCategory, removeCustomCategory } = useCustomCategories(communityId);
   const [newItemName, setNewItemName] = useState("");
   const [newItemCategory, setNewItemCategory] = useState<string>("");
   const [customOpen, setCustomOpen] = useState(false);
@@ -1331,10 +1370,8 @@ function SignUpTab({ channel, banned }: { channel: ChannelV2 | undefined; banned
 
   // Category chips: built-ins + the user's custom categories.
   const chipCategories = useMemo(() => {
-    const keys = [
-      ...SIGN_UP_CATEGORIES,
-      ...customs.map((c) => c.name.toLowerCase()),
-    ];
+    // No built-in categories: every board grows its own.
+    const keys = customs.map((c) => c.name.toLowerCase());
     return [...new Set(keys)];
   }, [customs]);
 
@@ -1642,7 +1679,7 @@ function ReplyBannerName({ pubkey }: { pubkey: string }) {
   return <>{getDisplayName(profile, pubkey)}</>;
 }
 
-function ChatTab({ channel, active, banned }: { channel: ChannelV2 | undefined; active: boolean; banned?: Set<string> }) {
+function ChatTab({ channel, active, banned, communityId }: { channel: ChannelV2 | undefined; active: boolean; banned?: Set<string>; communityId: string }) {
   const { user } = useCurrentUser();
   const { messages, isLoading, sendMessage, deleteMessage, sendReaction, removeReaction } =
     useChannelChat(channel, user?.pubkey, banned);
@@ -1763,7 +1800,7 @@ function ChatTab({ channel, active, banned }: { channel: ChannelV2 | undefined; 
           {/* Armada CTA — this community lives on the Concord protocol;
               Armada is the full-featured client for it. */}
           <a
-            href={`https://armada.buzz/c/${EVENT_CONFIG.communityId}`}
+            href={`${ARMADA_BASE}/c/${communityId}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-900 transition-colors hover:bg-orange-100 active:bg-orange-200"

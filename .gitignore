@@ -33,3 +33,6 @@ yarn.lock
 .env
 .env.*
 !.env.example
+
+# Local deploy tooling — infra detail, not part of the app
+scripts/

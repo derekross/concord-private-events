@@ -7,6 +7,7 @@
  */
 
 import { useNostr } from "@nostrify/react";
+import { resolveCommunityRelays } from "@/contexts/CommunityRelaysContext";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -47,10 +48,11 @@ export function useControlPlane(community: CommunityV2 | null | undefined): Cont
       const groups = controlGroups(community);
       const authors = groups.map((g) => g.pk);
 
-      // Query relays for control-plane wraps
+      // Query the community's own relays as well as the app's: a community
+      // hosted elsewhere has no control-plane wraps on our default set.
       const wraps = await nostr.query(
         [{ kinds: [KIND_WRAP], authors, limit: 500 }],
-        { signal }
+        { signal, relays: resolveCommunityRelays(community) }
       );
 
       // Open the wraps using the control group keys

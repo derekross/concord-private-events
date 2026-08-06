@@ -1,10 +1,10 @@
 # 🎉 Concord Private Events
 
-A private-event companion app for **one Concord V2 community** — event details,
+A private-event companion app for **any Concord V2 community** — event details,
 a potluck-style sign-up board, and end-to-end encrypted group chat, packaged as
-an installable mobile-first PWA. Members log in with Nostr (NIP-07 extension,
-nsec, or remote signer); everything they see lives inside the community's
-encrypted channels.
+an installable mobile-first PWA. Sign in with Nostr (NIP-07 extension, nsec, or
+remote signer), pick one of your communities, and everything you see lives
+inside that community's encrypted channels.
 
 The app is community-branded, not self-branded: once the control plane loads,
 the community's own **name, icon, banner, and description** take over the
@@ -12,6 +12,14 @@ header and hero.
 
 ## Features
 
+- **Any community** — sign in and pick from the communities you belong to.
+  Nothing is hardcoded: community identity, ownership and keys all come from
+  your encrypted Community List and the control-plane fold. Each community has
+  its own URL (`/c/<id>`) and its own sign-up categories.
+- **Join in-app** — paste an invite link and the app fetches the invite bundle,
+  verifies it (revoked / expired / tampered invites are refused), previews the
+  community, and writes the membership to your Community List. No second client
+  required.
 - **Details** — the host posts and edits event info in-app (date, time,
   location, one suggested contribution amount, payment handles). Guests see
   unified gradient cards:
@@ -46,33 +54,46 @@ npm test         # typecheck + lint + unit tests + production build
 npm run build    # Production build → dist/
 ```
 
-## Setup: point it at your community
+## Using it with your community
 
-1. **Create the community** in [Armada](https://armada.buzz). No channel
-   setup needed — everything (chat, NIP-52 events + RSVPs, sign-up board)
-   works inside the default `general` channel. If you prefer dedicated
-   channels, name them `event-info`, `sign-up`, and `chat` and they'll be
-   used instead.
-2. Copy the **community ID** (hex) and your **owner pubkey** (hex) into
-   `src/lib/eventConfig.ts`:
+There is nothing to configure. The app is not tied to a community — sign in,
+and it reads the communities you already belong to from your encrypted
+Community List (kind 13302).
 
-   ```typescript
-   export const EVENT_CONFIG: EventConfig = {
-     name: "Concord Private Events",   // fallback branding (landing/loading)
-     emoji: "🎉",
-     subtitle: "Plan your gathering, together",
-     communityId: "<COMMUNITY_ID_HEX>",
-     communityOwner: "<OWNER_PUBKEY_HEX>",
-     relays: ["wss://your.relay", "wss://nos.lol", "wss://relay.ditto.pub"],
-     channels: { eventInfo: "event-info", signUp: "sign-up", chat: "chat" },
-   };
-   ```
+1. **Sign in** with Nostr (NIP-07 extension, nsec, or a remote signer).
+2. **Pick a community.** If you're in exactly one you go straight in;
+   otherwise you get a picker. The URL is `/c/<community-id>`, so a community
+   can be linked or bookmarked directly.
+3. **Or paste an invite link** on the landing page. The app fetches the invite
+   bundle, shows you what you'd be joining, and on confirm writes the
+   membership into your own Community List — no other client needed.
 
-   Set the community's name/banner/icon/description in Armada — the app reads
-   them from the control plane (encrypted images are decrypted client-side).
-3. **Deploy** the `dist/` folder to any static host (Surge, Netlify, Pages…).
-4. **Invite guests** with Armada invite links; they paste the link on the
-   landing page. The owner (`communityOwner`) gets the in-app details editor.
+Communities themselves are created in [Armada](https://armada.buzz), which is
+also where you set the name, icon, banner and description; this app reads them
+from the control plane (encrypted images are decrypted client-side).
+
+**No channel setup is needed.** Everything — chat, NIP-52 events + RSVPs, and
+the sign-up board — works inside a single `general` channel, because event
+kinds distinguish the content. If you prefer dedicated channels, name them
+`event-info`, `sign-up` and `chat` and they'll be used instead.
+
+The **community owner** (as recorded in the community itself, not in any app
+config) gets the in-app event-details editor. Event details are read only from
+the owner's messages, so a member cannot inject a payment handle or date into
+the event cards.
+
+### Deploying
+
+Build and serve `dist/` from any static host. The app uses client-side routing,
+so the host must fall back to `index.html` for unknown paths — otherwise
+`/c/<id>` and `/invite/<naddr>` 404 on a fresh load. `npm run build` also
+writes `dist/404.html` for hosts that use that convention.
+
+### Relays
+
+Queries go to the app's default relay set (`src/lib/appRelays.ts`) unioned
+with the community's own relays from your membership material, so a community
+hosted on private relays still resolves.
 
 ## How it works
 
@@ -94,9 +115,9 @@ npm run build    # Production build → dist/
 ```
 src/
 ├── concord-v2/lib/     # Concord V2 protocol library (wire format)
-├── hooks/              # data hooks (chat, board, control plane, live sub)
-├── lib/                # eventConfig, parsers, payments, categories, helpers
-├── pages/              # Landing, AppPage (3 tabs), InviteLanding
+├── hooks/              # data hooks (memberships, chat, board, control plane, live sub)
+├── lib/                # app config, invite redemption, parsers, payments, helpers
+├── pages/              # Landing (picker), AppPage (3 tabs), InviteLanding (join)
 └── components/         # ui/ (shadcn), auth/, chat/, providers
 public/
 ├── manifest.webmanifest, sw.js   # PWA

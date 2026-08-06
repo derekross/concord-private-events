@@ -22,7 +22,12 @@ import { openChannelWraps } from "@/lib/concordHelpers";
 import { KIND_SIGNUP_ITEM } from "@/lib/signUpModel";
 import { imagesFromImeta, type ChatMessage } from "@/hooks/useChannelChat";
 
-export function useLiveChannelEvents(channels: ChannelV2[]) {
+/**
+ * @param relays The community's relays unioned with the app's. Passed rather
+ *   than read from context because this hook runs in AppPage itself, above
+ *   the provider that serves the tab subtree.
+ */
+export function useLiveChannelEvents(channels: ChannelV2[], relays?: string[]) {
   const { nostr } = useNostr();
   const queryClient = useQueryClient();
 
@@ -32,6 +37,14 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
   useEffect(() => {
     channelsRef.current = channels;
   }, [channels]);
+
+  // Same reason as channelsRef: a new array identity for the same relay set
+  // must not tear down the subscription. A genuine community switch changes
+  // the streams too, so streamSig resubscribes and picks this up.
+  const relaysRef = useRef(relays);
+  useEffect(() => {
+    relaysRef.current = relays;
+  }, [relays]);
 
   // Stable signature of the stream pubkey set — the effect resubscribes only
   // when the actual streams change (epoch rotation, channel add/remove).
@@ -63,7 +76,7 @@ export function useLiveChannelEvents(channels: ChannelV2[]) {
       try {
         for await (const msg of nostr.req(
           [{ kinds: [KIND_WRAP], authors: pks, since }],
-          { signal: controller.signal }
+          { signal: controller.signal, relays: relaysRef.current }
         )) {
           if (msg[0] !== "EVENT") continue;
           const wrap = msg[2] as NostrEvent;

@@ -11,7 +11,7 @@ import { openWrap, type OpenedEvent } from "@/concord-v2/lib/stream";
 import type { CommunityV2, ChannelV2 } from "@/concord-v2/lib/types";
 import type { NostrEvent } from "nostr-tools/pure";
 import type { QueryClient } from "@tanstack/react-query";
-import type { NRelay } from "@nostrify/nostrify";
+import type { NPool } from "@nostrify/nostrify";
 import { filterDeleted } from "@/lib/deleteUtils";
 
 /**
@@ -144,11 +144,14 @@ function bytesToHex(bytes: Uint8Array): string {
  * horizon for the hooks' reconciliation polls.
  */
 export function fetchChannelActive(
-  nostr: NRelay,
+  // NPool, not NRelay: only the pool supports the per-call relay override.
+  nostr: NPool,
   queryClient: QueryClient,
   channel: ChannelV2,
   signal?: AbortSignal,
   banned?: Set<string>,
+  /** The community's relays, unioned with the app's. Undefined = default routing. */
+  relays?: string[],
 ): Promise<{ active: OpenedEvent[]; deletedIds: Set<string> }> {
   const authors = channel.streams.map((s) => s.group.pk);
   const bannedKey = banned ? [...banned].sort().join(",") : "";
@@ -157,7 +160,7 @@ export function fetchChannelActive(
     queryFn: async () => {
       const wraps = await nostr.query(
         [{ kinds: [KIND_WRAP], authors, limit: 500 }],
-        { signal }
+        { signal, relays }
       );
       const opened = openChannelWraps(wraps as NostrEvent[], channel);
       // Moderation: drop everything authored by banned members (matches
