@@ -123,3 +123,7 @@ public/
 ├── manifest.webmanifest, sw.js   # PWA
 └── icons/                        # generated brand icons (Twemoji, CC-BY 4.0)
 ```
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later — see the [LICENSE](LICENSE) file for details.
